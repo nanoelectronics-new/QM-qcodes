@@ -132,6 +132,14 @@ class OPXRabiTime(OPX):
             set_cmd=None,
         )
         self.add_parameter(
+            "wait_time",
+            unit="ns",
+            initial_value = 20000,
+            vals=Numbers(1000, 1e7),
+            get_cmd=None,
+            set_cmd=None,
+        )
+        self.add_parameter(
             "trace_mag_phase",
             start=self.t_start(),
             stop=self.t_stop(),
@@ -165,13 +173,14 @@ class OPXRabiTime(OPX):
                 with for_(t, self.t_start(), t <= self.t_stop()+dt/2.0, t + dt):
                     reset_phase('qubit')
                     play("saturation"*amp(self.amp_qubit()), "qubit",duration=t) #t in clock cycles (4ns)
+                    # play("gauss"*amp(self.amp_qubit()), "qubit",duration=t) #t in clock cycles (4ns)
                     wait(t,'resonator')
                     reset_phase('resonator')
                     measure("readout"*amp(self.amp_resonator()), "resonator", None,
                             dual_demod.full("cos", "out1", "sin", "out2", I),
                             dual_demod.full("minus_sin", "out1", "cos", "out2", Q))
          
-                    wait(50000//4,'resonator','qubit')
+                    wait(self.wait_time()//4,'resonator','qubit')
                    #wait(100000 // 4, 'qubit')
                     save(I, I_st)
                     save(Q, Q_st)
@@ -199,8 +208,8 @@ class OPXRabiTime(OPX):
         self.qm =self.qmm.open_qm(self.config)
         self.qm.octave.set_qua_element_octave_rf_in_port('resonator',"octave1", 1)
         self.qm.octave.set_downconversion('resonator',lo_source=RFInputLOSource.Internal)
-        self.qm.octave.set_rf_output_gain('qubit', 7)  # can set gain from -10dB to 20dB
-        self.qm.octave.set_rf_output_gain('resonator', 0)  # can set gain from -10dB to 20dB
+        self.qm.octave.set_rf_output_gain('qubit', 15)  # can set gain from -10dB to 20dB
+        self.qm.octave.set_rf_output_gain('resonator', -10)  # can set gain from -10dB to 20dB
     
     def run_exp(self):
         self.execute_prog(self.get_prog())
@@ -219,7 +228,8 @@ class OPXRabiTime(OPX):
             u = unit()
             I = u.demod2volts(self.result_handles.get("I").fetch_all(), self.readout_pulse_length())
             Q = u.demod2volts(self.result_handles.get("Q").fetch_all(), self.readout_pulse_length())
-            R = np.sqrt(I ** 2 + Q ** 2)/(self.config['waveforms']['readout_wf']['sample']*self.amp_resonator())
+            # R = np.sqrt(I ** 2 + Q ** 2)/(self.config['waveforms']['readout_wf']['sample']*self.amp_resonator())
+            R = np.sqrt(I ** 2 + Q ** 2)
             phase = np.angle(I + 1j * Q) * 180 / np.pi
              
             return R, phase

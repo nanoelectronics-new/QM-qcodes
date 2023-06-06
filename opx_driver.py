@@ -168,6 +168,7 @@ class GeneratedSetPoints(Parameter):
 # noinspection PyAbstractClass
 class QMDemodParameters(MultiParameter):
     def __init__(self, instr, params, name, names, units, shapes=None, setpoints=None, *args, **kwargs):
+       
         if shapes is None:
             shapes = ((),) * len(params)
         if setpoints is None:
@@ -181,18 +182,19 @@ class QMDemodParameters(MultiParameter):
         self._params = params
 
     def get_raw(self):
-        vals = []
-
+        vals1 = []
+        vals2 = []
         result = self._instr.get_res()
         for param in self._params:
-            if param.lower() == 'x' or param.lower() == 'i':
-                vals.append(result['I'])
-            elif param.lower() == 'y' or param.lower() == 'q':
-                vals.append(result['Q'])
-            elif param.lower() == 'r':
-                vals.append(result['R'])
-            elif param.lower() == 'phase' or param.lower() == 'phi':
-                vals.append(result['Phi'])
+            if param == 'X' or param == 'I':
+                vals1.append(result['I'])
+            elif param == 'Y' or param == 'Q':
+                vals2.append(result['Q'])
+            elif param == 'R':
+                vals1.append(result['R'])
+            elif param == 'Phase' or param == 'Phi':
+                vals2.append(result['Phi'])
             else:
                 raise NotImplementedError("Only X (I), Y (Q), R or Phase (Phi) are valid inputs")
-        return tuple(vals)
+                
+        return np.array([vals1[0], vals2[0]])

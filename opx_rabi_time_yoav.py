@@ -1,10 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Tue Mar 21 14:26:50 2023
-
-@author: Nanoelectronics.ad
-"""
-
 from qcodes.utils.validators import Arrays
 from qcodes.instrument_drivers.OPX.opx_driver import *
 from qm.qua import *
@@ -15,7 +8,7 @@ from qualang_tools.units import unit
 class IQArray(MultiParameter):
     def __init__(self,
         name: str,
-        instrument: "OPXT2",
+        instrument: "OPXQubitScan",
         start: float,
         stop: float,
         npts: int,):
@@ -23,7 +16,7 @@ class IQArray(MultiParameter):
 
         super().__init__('MAg_phase', names=('Mag', 'Phase'), shapes=((npts,), (npts,)),
                          labels=('Mag', 'Phase'),
-                         units=('mV', 'degree'),
+                         units=('dB', 'degree'),
                          instrument=instrument,
                          # note that EACH item needs a sequence of setpoint arrays
                          # so a 1D item has its setpoints wrapped in a length-1 tuple
@@ -56,9 +49,9 @@ class IQArray(MultiParameter):
 
 
 
-class OPXT2(OPX):
-    def __init__(self, config: Dict, name: str = "OPXT2", host=None, port=None,host_octave=None, port_octave=None, **kwargs):
-        super().__init__(config, name, host=host, port=port,host_octave=host_octave, port_octave=port_octave, **kwargs)
+class OPXRabiTime(OPX):
+    def __init__(self, config: Dict, name: str = "OPXRabiTime", host=None, port=None, **kwargs):
+        super().__init__(config, name, host=host, port=port, **kwargs)
         self.add_parameter(
             "t_start",
             initial_value=3,
@@ -110,23 +103,15 @@ class OPXT2(OPX):
             "amp_resonator",
             unit="",
             initial_value=1,
-            vals=Numbers(-5, 5),
+            vals=Numbers(-2, 2),
             get_cmd=None,
             set_cmd=None,
         )
         self.add_parameter(
             "amp_qubit",
-            unit="V",
-            initial_value=0.1,
-            vals=Numbers(-0.5, 0.5),
-            get_cmd=None,
-            set_cmd=None,
-        )
-        self.add_parameter(
-            "freq_qubit",
-            unit="Hz",
-            initial_value=100e6,
-            vals=Numbers(-350e6, 350e6),
+            unit="",
+            initial_value=1,
+            vals=Numbers(-2, 2),
             get_cmd=None,
             set_cmd=None,
         )
@@ -149,16 +134,6 @@ class OPXT2(OPX):
     def get_prog(self):
         dt = (self.t_stop() - self.t_start()) / (self.n_points()-1)
         n_avg = round(self.t_meas() * 1e9 / self.readout_pulse_length())
-
-        
-        if self.octave:
-            lo =self.config['mixers']['octave_octave1_1'][0]['lo_frequency']
-            lo_qubit = self.config['mixers']['octave_octave1_2'][0]['lo_frequency']
-           
-        else:
-            lo =self.config['mixers']['mixer_resonator'][0]['lo_frequency']
-            lo_qubit = self.config['mixers']['mixer_qubit'][0]['lo_frequency']
-            
         self.parameters['trace_mag_phase'].set_sweep(self.t_start(),self.t_stop(),self.n_points())
         with program() as prog:
             n = declare(int)
@@ -167,20 +142,15 @@ class OPXT2(OPX):
             Q = declare(fixed)
             I_st = declare_stream()
             Q_st = declare_stream()
-            update_frequency('qubit', self.freq_qubit())
             with for_(n, 0, n < n_avg, n + 1):
                 with for_(t, self.t_start(), t <= self.t_stop()+dt/2.0, t + dt):
-                    reset_phase('qubit')
-                    play("pi_half", "qubit") #t in clock cycles (4ns)
-                    wait(t,'qubit')
-                    play("pi_half"*amp(-1), "qubit") #t in clock cycles (4ns)
-                    wait(t+10,'resonator'),
-                    reset_phase('resonator')
-                    measure("readout", "resonator", None,
+
+                    play("gauss"*amp(self.amp_qubit()), "qubit",duration=t) #t in clock cycles (4ns)
+                    wait(t, 'resonator')
+                    measure("readout"*amp(self.amp_resonator()), "resonator", None,
                             dual_demod.full("cos", "out1", "sin", "out2", I),
                             dual_demod.full("minus_sin", "out1", "cos", "out2", Q))
-
-                    wait(20000 // 4, 'resonator', 'qubit')
+                    wait(1000//4,'resonator')
                     save(I, I_st)
                     save(Q, Q_st)
 
@@ -190,31 +160,9 @@ class OPXT2(OPX):
 
         return prog
     
-    def set_octave(self):
-        lo =self.config['mixers']['octave_octave1_1'][0]['lo_frequency']
-        lo_qubit = self.config['mixers']['octave_octave1_2'][0]['lo_frequency']
-        self.qm.octave.set_lo_source('resonator', OctaveLOSource.Internal)
-        self.qm.octave.set_lo_frequency('resonator', lo)  # assign the LO inside the octave to element
-        self.qm.octave.set_rf_output_gain('resonator', 0)  # can set gain from -10dB to 20dB
-        self.qm.octave.set_rf_output_mode('resonator', RFOutputMode.trig_normal) # set the behaviour of the RF switch
-        self.qm.octave.calibrate_element('resonator',[(lo, self.config['elements']['resonator']['intermediate_frequency'])]) # can provide many pairs of LO & IFs.
-        self.qm =self.qmm.open_qm(self.config)
-        self.qm.octave.set_lo_source('qubit', OctaveLOSource.Internal)
-        self.qm.octave.set_lo_frequency('qubit', lo_qubit)  # assign the LO inside the octave to element
-        self.qm.octave.set_rf_output_gain('qubit', 0)  # can set gain from -10dB to 20dB
-        self.qm.octave.set_rf_output_mode('qubit', RFOutputMode.trig_normal) # set the behaviour of the RF switch
-        self.qm.octave.calibrate_element('qubit',[(lo_qubit, self.config['elements']['qubit']['intermediate_frequency'])]) # can provide many pairs of LO & IFs.
-        self.qm =self.qmm.open_qm(self.config)
-        self.qm.octave.set_qua_element_octave_rf_in_port('resonator',"octave1", 1)
-        self.qm.octave.set_downconversion('resonator',lo_source=RFInputLOSource.Internal)
-        self.qm.octave.set_rf_output_gain('qubit', 10)  # can set gain from -10dB to 20dB
-        self.qm.octave.set_rf_output_gain('resonator', -10)  # can set gain from -10dB to 20dB
     def run_exp(self):
         self.execute_prog(self.get_prog())
-        
-    def sim_exp(self,duration):
-            self.simulate_prog(self.get_prog(),duration)
-            
+
     def get_res(self):
         if (
             self.result_handles is None
@@ -222,12 +170,12 @@ class OPXT2(OPX):
             n = self.n_points()
             return {"I": (0,)*n, "Q": (0,)*n, "R": (0,)*n, "Phi": (0,)*n}
         else:
-            self.result_handles.wait_for_all_values()
             u = unit()
-            I = u.demod2volts(self.result_handles.get("I").fetch_all(), self.readout_pulse_length())
-            Q = u.demod2volts(self.result_handles.get("Q").fetch_all(), self.readout_pulse_length())
-            # R = np.sqrt(I ** 2 + Q ** 2)/(self.config['waveforms']['readout_wf']['sample']*self.amp_resonator())
-            R = 20*np.log10(np.sqrt(I ** 2 + Q ** 2))
-            phase = np.angle(I + 1j * Q) * 180 / np.pi
-             
+            self.result_handles.wait_for_all_values()
+            print(self.config['pulses']['readout_pulse']['length'])
+            readout_amp = self.config['waveforms']['readout_wf']['sample']
+            I = self.result_handles.get("I").fetch_all()
+            Q = self.result_handles.get("Q").fetch_all()
+            R = 20 * np.log10(np.sqrt((u.demod2volts(I, self.readout_pulse_length()) ** 2) + ( u.demod2volts(Q, self.readout_pulse_length()) ** 2)) / (readout_amp * self.amp_resonator()))
+            phase =(np.angle(I + 1j * Q)) * 180 / np.pi
             return R , phase

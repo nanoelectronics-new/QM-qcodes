@@ -115,14 +115,23 @@ class OPXRawADC(OPX):
         
         if self.octave:
             lo =self.config['mixers']['octave_octave1_1'][0]['lo_frequency']
+            lo_qubit = self.config['mixers']['octave_octave1_2'][0]['lo_frequency']
             self.qm.octave.set_lo_source('resonator', OctaveLOSource.Internal)
-            self.qm.octave.set_lo_frequency('resonator', lo) # assign the LO inside the octave to element
-            self.qm.octave.set_rf_output_gain('resonator', 0) # can set gain from -10dB to 20dB
+            self.qm.octave.set_lo_frequency('resonator', lo)  # assign the LO inside the octave to element
+            self.qm.octave.set_rf_output_gain('resonator', 0)  # can set gain from -10dB to 20dB
             self.qm.octave.set_rf_output_mode('resonator', RFOutputMode.trig_normal) # set the behaviour of the RF switch
             self.qm.octave.calibrate_element('resonator',[(lo, self.config['elements']['resonator']['intermediate_frequency'])]) # can provide many pairs of LO & IFs.
             self.qm =self.qmm.open_qm(self.config)
+            self.qm.octave.set_lo_source('qubit', OctaveLOSource.Internal)
+            self.qm.octave.set_lo_frequency('qubit', lo_qubit)  # assign the LO inside the octave to element
+            self.qm.octave.set_rf_output_gain('qubit', 0)  # can set gain from -10dB to 20dB
+            self.qm.octave.set_rf_output_mode('qubit', RFOutputMode.trig_normal) # set the behaviour of the RF switch
+            self.qm.octave.calibrate_element('qubit',[(lo_qubit, self.config['elements']['qubit']['intermediate_frequency'])]) # can provide many pairs of LO & IFs.
+            self.qm =self.qmm.open_qm(self.config)
             self.qm.octave.set_qua_element_octave_rf_in_port('resonator',"octave1", 1)
             self.qm.octave.set_downconversion('resonator',lo_source=RFInputLOSource.Internal)
+            self.qm.octave.set_rf_output_gain('qubit', -10)  # can set gain from -10dB to 20dB
+            self.qm.octave.set_rf_output_gain('resonator', -10)
         else:
             lo =self.config['mixers']['mixer_resonator'][0]['lo_frequency']
             
@@ -139,6 +148,7 @@ class OPXRawADC(OPX):
             #     play('readout', 'resonator')
 
             with for_(n, 0, n < n_avg, n + 1):
+                # play('saturation','qubit')
                 reset_phase("resonator")
                 measure("readout", "resonator", adc_st)
                 wait(10000 // 4, 'resonator')
@@ -174,4 +184,5 @@ class OPXRawADC(OPX):
             print(self.config['pulses']['readout_pulse']['length'])
             I = 1e3*self.result_handles.get("I").fetch_all()/4096
             Q = 1e3*self.result_handles.get("Q").fetch_all()/4096
+
             return I,Q

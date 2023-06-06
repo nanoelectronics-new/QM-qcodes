@@ -82,6 +82,14 @@ class OPXSpectrumScan(OPX):
             set_cmd=None,
         )
         self.add_parameter(
+            "Gain",
+            initial_value=0,
+            unit="dB",
+            vals=Numbers(-10, 20),
+            get_cmd=None,
+            set_cmd=self.set_gain,
+        )
+        self.add_parameter(
             "t_meas",
             unit="s",
             initial_value=0.01,
@@ -108,6 +116,7 @@ class OPXSpectrumScan(OPX):
             get_cmd=None,
             set_cmd=None,
         )
+
         self.add_parameter(
             "readout_pulse_length",
             unit="ns",
@@ -167,7 +176,10 @@ class OPXSpectrumScan(OPX):
         self.qm =self.qmm.open_qm(self.config)
         self.qm.octave.set_qua_element_octave_rf_in_port('resonator',"octave1", 1)
         self.qm.octave.set_downconversion('resonator',lo_source=RFInputLOSource.Internal)
-        self.qm.octave.set_rf_output_gain('resonator', 0) # can set gain from -10dB to 20dB
+        self.qm.octave.set_rf_output_gain('resonator',-10) # can set gain from -10dB to 20dB
+        
+    def set_gain(self,gain):
+        self.qm.octave.set_rf_output_gain('resonator', gain)  # can set gain from -10dB to 20dB
 
     def run_exp(self):
         self.execute_prog(self.get_prog())
@@ -187,6 +199,7 @@ class OPXSpectrumScan(OPX):
             u = unit()
             I = u.demod2volts(self.result_handles.get("I").fetch_all(), self.readout_pulse_length())
             Q = u.demod2volts(self.result_handles.get("Q").fetch_all(), self.readout_pulse_length())
-            R = 20*np.log10(np.sqrt(I ** 2 + Q ** 2)/(self.config['waveforms']['readout_wf']['sample']*self.amp()))
+            # R = 20*np.log10(np.sqrt(I ** 2 + Q ** 2)/(self.config['waveforms']['readout_wf']['sample']*self.amp()))
+            R = 20*np.log10(np.sqrt(I ** 2 + Q ** 2))-self.Gain()
             phase = signal.detrend(np.unwrap(np.angle(I + 1j * Q))) * 180 / np.pi
             return R , phase

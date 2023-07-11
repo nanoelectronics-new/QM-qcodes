@@ -94,10 +94,10 @@ class OPX(Instrument):
             # octave_config.set_calibration_db("D:\\Oliver\\Resonator_measurements\\20230316_Farid_qubit_Cu_cavity")
             octave_config.add_device_info('octave1', host_octave, port_octave)
             octave_config.set_opx_octave_mapping([('con1', 'octave1')]) # set default mapping between analog outputs of OPX and the octave       
-            self.qmm = QuantumMachinesManager(host=host, port=port,octave= octave_config)
+            self.qmm = QuantumMachinesManager(host=host, cluster_name='my_cluster_1',octave= octave_config)
             self.qmm.octave_manager.set_clock("octave1", ClockType.Internal, ClockFrequency.MHZ_10) # internal clock
         else:
-            self.qmm = QuantumMachinesManager(host=host, port=port)
+            self.qmm = QuantumMachinesManager(host=host, cluster_name='my_cluster_1')
             
         self.connect_message()
 

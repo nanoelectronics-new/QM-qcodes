@@ -1,5 +1,5 @@
 from qcodes.utils.validators import Arrays
-from qcodes.instrument_drivers.OPX.opx_driver import *
+from qcodes.instrument_drivers.QM_qcodes.opx_driver import *
 from qm.qua import *
 from scipy import signal
 from qualang_tools.units import unit

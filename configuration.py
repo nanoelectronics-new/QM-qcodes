@@ -32,18 +32,18 @@ time_of_flight = 192
 opx_ip = '10.21.41.199'
 opx_port = 80
 octave_ip = '10.21.41.199'
-octave_port = 50
+octave_port = 11050
 
 
 saturation_len = 10000
-saturation_amp = 0.25
+saturation_amp = 0.2
 const_len = 40000
 const_amp = 0.125
 
 order = 1
-gauss_len = 40
+gauss_len = 16
 gauss_sigma = gauss_len / 5
-gauss_amp = 0.25
+gauss_amp = 0.35
 #gauss_wf = gauss_amp * general_gaussian(gauss_len, order, gauss_sigma)
 gauss_wf = gauss_amp * cosine(gauss_len)
 
@@ -53,16 +53,16 @@ pi_sigma = pi_len / 5
 pi_amp = 0.125
 # pi_wf = pi_amp * gaussian(pi_len, pi_sigma)
 
-pi_half_len = 20
-pi_half_sigma = pi_half_len / 5
-pi_half_amp = 0.25
-pi_half_wf = pi_half_amp * cosine(gauss_len)
-
 def delayed_wf(amp, length):
     delay = 16 - length
     if delay < 0:
         return amp 
-    return np.r_[np.zeros(delay), np.full(length,amp)]
+    return np.r_[np.zeros(delay), amp*cosine(length)]
+
+pi_half_len = 8
+pi_half_sigma = pi_half_len / 5
+pi_half_amp = 0.38
+pi_half_wf = delayed_wf(pi_half_amp,pi_half_len)
 
 wf_1ns_res = delayed_wf(0.1,4)
 # Resonator
@@ -79,16 +79,16 @@ resonator_fake_lo_freq =4.7e9 # Internal synthesizer in the octave
 
 short_readout_len = 500
 short_readout_amp = 0.4
-readout_len = 500
+readout_len = 300
 readout_amp = 0.1
 long_readout_len = 10000
 long_readout_amp = 0.1
 
 # Resonator kick-in
 
-kick_length = 20
-kick_amp = 3*readout_amp
-
+kick_length = 180
+kick_amp = 4.99*readout_amp
+ringup = 100
 clear = np.concatenate([np.full(kick_length, kick_amp),
                         np.full(readout_len, readout_amp)])
 
@@ -157,6 +157,7 @@ config = {
                   },
                 },
         },
+        
         # 'resonator_fake': {
         #     'mixInputs': {
         #         'I': ('con1', 1),
@@ -207,7 +208,7 @@ config = {
                 'out1': ('con1', 1),
                 'out2': ('con1', 2),
             },
-            'time_of_flight': 260,
+            'time_of_flight': 252,
             'smearing': 20,
         },
         # 'gate_sticky': {
@@ -270,7 +271,7 @@ config = {
         },
         'pi_half_pulse': {
             'operation': 'control',
-            'length': pi_half_len,
+            'length': 16,
             'waveforms': {
                 'I': 'pi_half_wf',
                 'Q': 'zero_wf',
@@ -362,7 +363,7 @@ config = {
         'zero_wf': {'type': 'constant', 'sample': 0.0},
         'gauss_wf': {'type': 'arbitrary', 'samples': gauss_wf.tolist()},
         'pi_wf': {'type': 'constant', 'sample': pi_amp},
-        'pi_half_wf': {'type': 'constant', 'sample': pi_half_amp},
+        'pi_half_wf': {'type': 'arbitrary', 'samples': pi_half_wf.tolist()},
         'short_readout_wf': {'type': 'constant', 'sample': short_readout_amp},
         # 'readout_wf': {'type': 'constant', 'sample': readout_amp},
         'readout_wf': {'type': 'arbitrary', 'samples': clear.tolist()},
@@ -390,7 +391,7 @@ config = {
             'sine': [(-1.0, short_readout_len)],
         },
         'cosine_weights': {
-            'cosine': [(0.0, kick_length),(1.0, readout_len)],
+            'cosine': [(0.0,ringup),(1.0, kick_length-ringup),(1.0, readout_len)],
             'sine': [(0.0, readout_len+kick_length)],
         },
         # 'cont_cosine_weights': {
@@ -399,7 +400,7 @@ config = {
         # },
         'sine_weights': {
             'cosine': [(0.0, readout_len+kick_length)],
-            'sine': [(0.0,kick_length),(1.0, readout_len)],
+            'sine': [(0.0,ringup),(1.0,kick_length-ringup),(1.0, readout_len)],
         },
         # 'cont_sine_weights': {
         #     'cosine': [(0.0, readout_len)],
@@ -407,7 +408,7 @@ config = {
         # },
         'minus_sine_weights': {
             'cosine': [(0.0, readout_len+kick_length)],
-            'sine': [(0.0,kick_length),(-1.0, readout_len)],
+            'sine': [(0.0, ringup), (-1.0,kick_length-ringup),(-1.0, readout_len)],
         },
         # 'cont_minus_sine_weights': {
         #     'cosine': [(0.0, readout_len)],

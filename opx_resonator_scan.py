@@ -1,5 +1,5 @@
 from qcodes.utils.validators import Arrays
-from qcodes.instrument_drivers.OPX.opx_driver import *
+from qcodes.instrument_drivers.QM_qcodes.opx_driver import *
 from qm.qua import *
 from scipy import signal
 from qualang_tools.units import unit
@@ -179,6 +179,7 @@ class OPXSpectrumScan(OPX):
         self.qm.octave.set_rf_output_gain('resonator',-10) # can set gain from -10dB to 20dB
         
     def set_gain(self,gain):
+        
         self.qm.octave.set_rf_output_gain('resonator', gain)  # can set gain from -10dB to 20dB
 
     def run_exp(self):

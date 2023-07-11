@@ -1,5 +1,5 @@
 from qcodes.utils.validators import Arrays
-from qcodes.instrument_drivers.OPX.opx_driver import *
+from qcodes.instrument_drivers.QM_qcodes.opx_driver import *
 from qm.qua import *
 from scipy import signal
 from qualang_tools.units import unit
@@ -172,9 +172,9 @@ class OPXRabiTime(OPX):
             with for_(n, 0, n < n_avg, n + 1):
                 with for_(t, self.t_start(), t <= self.t_stop()+dt/2.0, t + dt):
                     reset_phase('qubit')
-                    play("saturation"*amp(self.amp_qubit()), "qubit",duration=t) #t in clock cycles (4ns)
+                    play("gauss"*amp(self.amp_qubit()), "qubit",duration=t) #t in clock cycles (4ns)
                     # play("gauss"*amp(self.amp_qubit()), "qubit",duration=t) #t in clock cycles (4ns)
-                    wait(t,'resonator')
+                    wait(t+17,'resonator')
                     reset_phase('resonator')
                     measure("readout"*amp(self.amp_resonator()), "resonator", None,
                             dual_demod.full("cos", "out1", "sin", "out2", I),
@@ -208,7 +208,7 @@ class OPXRabiTime(OPX):
         self.qm =self.qmm.open_qm(self.config)
         self.qm.octave.set_qua_element_octave_rf_in_port('resonator',"octave1", 1)
         self.qm.octave.set_downconversion('resonator',lo_source=RFInputLOSource.Internal)
-        self.qm.octave.set_rf_output_gain('qubit', 15)  # can set gain from -10dB to 20dB
+        self.qm.octave.set_rf_output_gain('qubit', 19)  # can set gain from -10dB to 20dB
         self.qm.octave.set_rf_output_gain('resonator', -10)  # can set gain from -10dB to 20dB
     
     def run_exp(self):

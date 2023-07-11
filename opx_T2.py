@@ -6,7 +6,7 @@ Created on Tue Mar 21 14:26:50 2023
 """
 
 from qcodes.utils.validators import Arrays
-from qcodes.instrument_drivers.OPX.opx_driver import *
+from qcodes.instrument_drivers.QM_qcodes.opx_driver import *
 from qm.qua import *
 from scipy import signal
 from qualang_tools.units import unit
@@ -46,7 +46,7 @@ class IQArray(MultiParameter):
     def set_sweep(self, start: float, stop: float, npts: int):
         # Needed to update config of the software parameter on sweep change
         # frequency setpoints tuple as needs to be hashable for look up.
-        f = tuple(np.linspace(4*int(start), 4*int(stop), num=npts))
+        f = tuple(np.linspace(4*int(start+2), 4*int(stop+2), num=npts))
         self.setpoints = ((f,), (f,))
         self.shapes = ((npts,), (npts,))
 
@@ -130,6 +130,15 @@ class OPXT2(OPX):
             get_cmd=None,
             set_cmd=None,
         )
+        self.add_parameter(
+            "detuning",
+            unit="Hz",
+            initial_value=10e6,
+            vals=Numbers(-100e6, 100e6),
+            get_cmd=None,
+            set_cmd=None,
+        )
+
 
         self.add_parameter(
             "readout_pulse_length",
@@ -170,19 +179,24 @@ class OPXT2(OPX):
             update_frequency('qubit', self.freq_qubit())
             with for_(n, 0, n < n_avg, n + 1):
                 with for_(t, self.t_start(), t <= self.t_stop()+dt/2.0, t + dt):
-                    reset_phase('qubit')
+                   # reset_phase('qubit')
                     play("pi_half", "qubit") #t in clock cycles (4ns)
                     wait(t,'qubit')
+                    frame_rotation_2pi(
+                          Cast.mul_fixed_by_int(self.detuning() * 1e-9, 4 * t), "qubit"
+                      )  # 4*tau because tau was in clock cycles and 1e-9 because tau is ns
                     play("pi_half"*amp(-1), "qubit") #t in clock cycles (4ns)
-                    wait(t+10,'resonator'),
+                    wait(t,'resonator'),
                     reset_phase('resonator')
                     measure("readout", "resonator", None,
                             dual_demod.full("cos", "out1", "sin", "out2", I),
                             dual_demod.full("minus_sin", "out1", "cos", "out2", Q))
 
-                    wait(20000 // 4, 'resonator', 'qubit')
+                    wait(2500, 'resonator', 'qubit')
                     save(I, I_st)
                     save(Q, Q_st)
+                    reset_frame('qubit')
+
 
             with stream_processing():
                 I_st.buffer(self.n_points()).average().save("I")
@@ -207,7 +221,7 @@ class OPXT2(OPX):
         self.qm =self.qmm.open_qm(self.config)
         self.qm.octave.set_qua_element_octave_rf_in_port('resonator',"octave1", 1)
         self.qm.octave.set_downconversion('resonator',lo_source=RFInputLOSource.Internal)
-        self.qm.octave.set_rf_output_gain('qubit', 10)  # can set gain from -10dB to 20dB
+        self.qm.octave.set_rf_output_gain('qubit', 19)  # can set gain from -10dB to 20dB
         self.qm.octave.set_rf_output_gain('resonator', -10)  # can set gain from -10dB to 20dB
     def run_exp(self):
         self.execute_prog(self.get_prog())

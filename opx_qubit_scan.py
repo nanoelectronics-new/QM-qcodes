@@ -157,7 +157,7 @@ class OPXQubitScan(OPX):
                 with for_(f, self.f_start(), f < self.f_stop()+df/2.0, f + df):
                     update_frequency("qubit", f)
                     play("saturation", "qubit")
-                    wait(((10000-32)//4),'resonator')
+                    wait(((2000-32)//4),'resonator')
                     reset_phase('resonator')
                     measure("readout"*amp(self.amp_resonator()), "resonator", None,
                             dual_demod.full("cos", "out1", "sin", "out2", I),
@@ -166,7 +166,7 @@ class OPXQubitScan(OPX):
                   
                  
   
-                    wait(20000//4,'resonator','qubit')
+                    wait(5000//4,'resonator','qubit')
                     save(I, I_st)
                     save(Q, Q_st)
 
@@ -193,7 +193,7 @@ class OPXQubitScan(OPX):
         self.qm =self.qmm.open_qm(self.config)
         self.qm.octave.set_qua_element_octave_rf_in_port('resonator',"octave1", 1)
         self.qm.octave.set_downconversion('resonator',lo_source=RFInputLOSource.Internal)
-        self.qm.octave.set_rf_output_gain('qubit', 15)  # can set gain from -10dB to 20dB
+        self.qm.octave.set_rf_output_gain('qubit', -8)  # can set gain from -10dB to 20dB
         self.qm.octave.set_rf_output_gain('resonator', -10)
         
     def set_qubit_gain(self,gain):

@@ -37,7 +37,7 @@ from qcodes_contrib_drivers.drivers.RohdeSchwarz import SMW200A as smw200a
 today=date.today()
 today = today.strftime("%Y%m%d")
 #sample=input("Sample name:");
-sample='Al_Transmon_10891_20mK'
+sample='Gatemon_RT_5nm_2'
 # define the name of the directory to be created
 # path = os.path.abspath(os.getcwd())
 path = "D:\Oliver\Resonator_measurements"
@@ -98,7 +98,7 @@ dac.dac14.interdelay =100
 dac.dac15.interdelay =100
 dac.dac16.interdelay =100
 
-gate=dac.dac6
+gate=dac.dac10
 
 dac.get_dacs()
 
@@ -348,7 +348,7 @@ importlib.reload(config)
 
 
 # time_meas = ElapsedTimeParameter('time_meas')
-lo_freq = 4.63e9
+lo_freq = 4.7e9
 # sg_src.frequency(lo_freq)
 # sg_src.power(18)
 # sg_src.status(1)
@@ -360,7 +360,7 @@ station.add_component(opx_freq_scan)
 
 readout_pulse_length = config.config['pulses']['readout_pulse']['length']
 fmin=100e6
-fmax= 150e6
+fmax= 200e6
 npts = 201
 
 opx_freq_scan.f_start(fmin)
@@ -392,10 +392,10 @@ opx_freq_scan.close()
   
 # %% Resonator scan 2d
 
-from qcodes.instrument_drivers.OPX.opx_resonator_scan import *
+from qcodes.instrument_drivers.QM_qcodes.opx_resonator_scan import *
 importlib.reload(config)
 
-lo_freq = 4.5e9
+lo_freq = 4.75e9
 # sg_src.frequency(lo_freq)
 # sg_src.power(18)
 # sg_src.status(1)
@@ -406,9 +406,9 @@ opx_freq_scan = OPXSpectrumScan(config=config.config, host=config.opx_ip, port=c
 station.add_component(opx_freq_scan)
 
 readout_pulse_length = config.config['pulses']['readout_pulse']['length']
-fmin=140e6
-fmax= 220e6
-npts =161
+fmin=100e6
+fmax= 200e6
+npts =201
 
 opx_freq_scan.f_start(fmin)
 opx_freq_scan.f_stop(fmax)
@@ -435,14 +435,15 @@ dataset =load_by_run_spec(captured_run_id=id)
 [axlist,cbar] = plot_dataset(dataset)
 axlist[0].figure.savefig(path+'\\#%s_%s_amp'%(meas.name,dataset.captured_run_id),bbox_inches='tight')
 axlist[1].figure.savefig(path+'\\#%s_%s_phase'%(meas.name,dataset.captured_run_id),bbox_inches='tight')
+station.remove_component('OPXSpectrumScan')
 opx_freq_scan.close()
   
 # %% Qubit scan
 importlib.reload(config)
 from qcodes.instrument_drivers.QM_qcodes.opx_qubit_scan import *
 
-meas_freq = 4.7574e9
-lo_qubit =5.8e9
+meas_freq = 4.822e9
+lo_qubit =2.6e9
 resonator_if = 125e6
 lo_freq = meas_freq - resonator_if
 # sg_src_2.frequency(lo_qubit)
@@ -464,9 +465,9 @@ opx_qubit_scan = OPXQubitScan(config=config.config, host=config.opx_ip, port=con
 station.add_component(opx_qubit_scan)
 
 readout_pulse_length = config.config['pulses']['readout_pulse']['length']
-fmax =350e6
-fmin= 10e6
-df = 0.5e6
+fmin =-350e6
+fmax= -10e6
+df = 1e6
 freqs = np.arange(fmin,fmax+0.1,df)
 
 npts = len(freqs)
@@ -474,11 +475,11 @@ npts = len(freqs)
 opx_qubit_scan.f_start(fmin)
 opx_qubit_scan.f_stop(fmax)
 opx_qubit_scan.n_points(npts)
-opx_qubit_scan.t_meas(readout_pulse_length*1e-9*1e4) #in s
+opx_qubit_scan.t_meas(readout_pulse_length*1e-9*4e4) #in s
 opx_qubit_scan.readout_pulse_length(readout_pulse_length)
 opx_qubit_scan.amp_resonator(1)
 # opx_qubit_scan.set_qubit_gain(7)
-# opx_qubit_scan.sim_exp(10000)
+#opx_qubit_scan.sim_exp(10000)
 
 opx_qubit_scan.set_octave()
 
@@ -497,6 +498,72 @@ axlist[0].figure.savefig(path+'\\#%s_%s_amp'%(meas.name,dataset.captured_run_id)
 axlist[1].figure.savefig(path+'\\#%s_%s_phase'%(meas.name,dataset.captured_run_id),bbox_inches='tight')
 station.remove_component('OPXQubitScan')
 opx_qubit_scan.close()
+
+# %% Anharmonicity
+
+importlib.reload(config)
+from qcodes.instrument_drivers.QM_qcodes.opx_anharmonicity import *
+
+
+meas_freq = 4.822e9
+qubit_freq = 2.46e9
+if_qubit = -100e6
+if_resonator = 125e6
+
+lo_resonator = meas_freq - if_resonator
+lo_qubit = qubit_freq - if_qubit
+
+
+config.config['elements']['resonator']['mixInputs']['lo_frequency'] = lo_resonator
+config.config['elements']['resonator']['intermediate_frequency'] = if_resonator
+config.config['mixers']['octave_octave1_1'][0]['lo_frequency'] = lo_resonator
+config.config['mixers']['octave_octave1_1'][0]['intermediate_frequency'] = if_resonator
+config.config['elements']['qubit']['intermediate_frequency'] = if_qubit
+config.config['elements']['qubit2']['intermediate_frequency'] = if_qubit
+config.config['elements']['qubit']['mixInputs']['lo_frequency'] = lo_qubit
+config.config['elements']['qubit2']['mixInputs']['lo_frequency'] = lo_qubit
+config.config['mixers']['octave_octave1_2'][0]['lo_frequency'] = lo_qubit
+config.config['mixers']['octave_octave1_2'][1]['lo_frequency'] = lo_qubit
+config.config['mixers']['octave_octave1_2'][0]['intermediate_frequency'] = if_qubit
+config.config['mixers']['octave_octave1_2'][1]['intermediate_frequency'] = if_qubit
+
+opx_anharmonicity = OPXAnharmonicity(config=config.config, host=config.opx_ip, port=config.opx_port,host_octave=config.octave_ip,port_octave=config.octave_port)
+station.add_component(opx_anharmonicity)
+
+readout_pulse_length = config.config['pulses']['readout_pulse']['length']
+fmin =-350e6
+fmax= -10e6
+df = 1e6
+freqs = np.arange(fmin,fmax+0.1,df)
+
+npts = len(freqs)
+
+opx_anharmonicity.f_start(fmin)
+opx_anharmonicity.f_stop(fmax)
+opx_anharmonicity.n_points(npts)
+opx_anharmonicity.t_meas(readout_pulse_length*1e-9*4e4) #in s
+opx_anharmonicity.readout_pulse_length(readout_pulse_length)
+opx_anharmonicity.amp_resonator(1)
+
+#opx_anharmonicity.sim_exp(10000)
+
+opx_anharmonicity.set_octave()
+
+meas = Measurement(experiment, station)
+meas.name = "Anharmonicity"
+meas.register_parameter(opx_anharmonicity.trace_mag_phase,paramtype='array')
+with meas.run() as datasaver:
+    opx_anharmonicity.run_exp()
+    get_v = opx_anharmonicity.trace_mag_phase.get()
+    datasaver.add_result((opx_anharmonicity.trace_mag_phase, get_v))
+    datasaver.flush_data_to_database()
+    id = datasaver.run_id
+dataset =load_by_run_spec(captured_run_id=id)
+[axlist,cbar] = plot_dataset(dataset)
+axlist[0].figure.savefig(path+'\\#%s_%s_amp'%(meas.name,dataset.captured_run_id),bbox_inches='tight')
+axlist[1].figure.savefig(path+'\\#%s_%s_phase'%(meas.name,dataset.captured_run_id),bbox_inches='tight')
+station.remove_component('OPXAnharmonicity')
+opx_anharmonicity.close()
 
 
 # %% Qubit scan 2d
@@ -567,22 +634,14 @@ opx_qubit_scan.close()
 importlib.reload(config)
 from qcodes.instrument_drivers.QM_qcodes.opx_rabi_time import *
 
-meas_freq = 4.7573e9
-qubit_freq = 6.11516e9
-lo_qubit =5.9e9
+meas_freq = 4.8245e9
+qubit_freq = 2.876e9
+if_qubit = -250e6
 if_resonator = 125e6
 
 lo_resonator = meas_freq - if_resonator
-if_qubit = qubit_freq - lo_qubit
+lo_qubit = qubit_freq - if_qubit
 
-
-# sg_src_2.frequency(lo_qubit)
-# sg_src_2.power(-3)
-# sg_src_2.IQ_state(1)
-# sg_src_2.status(1)
-# sg_src.frequency(lo_freq)
-# sg_src.power(18)
-# sg_src.status(1)
 
 config.config['elements']['resonator']['mixInputs']['lo_frequency'] = lo_resonator
 config.config['elements']['resonator']['intermediate_frequency'] = if_resonator
@@ -592,13 +651,13 @@ config.config['elements']['qubit']['intermediate_frequency'] = if_qubit
 config.config['elements']['qubit']['mixInputs']['lo_frequency'] = lo_qubit
 config.config['mixers']['octave_octave1_2'][0]['lo_frequency'] = lo_qubit
 config.config['mixers']['octave_octave1_2'][0]['intermediate_frequency'] = if_qubit
-# print(config.config['mixers']['octave_octave1_1'])
+
 opx_rabi_time = OPXRabiTime(config=config.config, host=config.opx_ip, port=config.opx_port,host_octave=config.octave_ip,port_octave=config.octave_port)
 station.add_component(opx_rabi_time)
 
 readout_pulse_length = config.config['pulses']['readout_pulse']['length']
 tmin = 4
-tmax= 75
+tmax= 175
 dt = 1
 taus = np.arange(tmin,tmax+0.1,dt)
 
@@ -608,15 +667,16 @@ opx_rabi_time.t_start(tmin)
 opx_rabi_time.t_stop(tmax)
 opx_rabi_time.n_points(npts)
 opx_rabi_time.readout_pulse_length(readout_pulse_length)
-opx_rabi_time.t_meas(readout_pulse_length*1e-9*2e4) #in s
+opx_rabi_time.t_meas(readout_pulse_length*1e-9*5e4) #in s
 opx_rabi_time.readout_pulse_length(readout_pulse_length)
 opx_rabi_time.amp_resonator(1)
 opx_rabi_time.amp_qubit(1)
 opx_rabi_time.freq_qubit(if_qubit)
-opx_rabi_time.wait_time(10000)
-# opx_rabi_time.sim_exp(10000)
-
+opx_rabi_time.wait_time(5000)
+#opx_rabi_time.sim_exp(10000)
 opx_rabi_time.set_octave()
+
+
 
 meas = Measurement(experiment, station)
 meas.name = "Rabi_Time_1D"
@@ -633,6 +693,23 @@ axlist[0].figure.savefig(path+'\\#%s_%s_amp'%(meas.name,dataset.captured_run_id)
 axlist[1].figure.savefig(path+'\\#%s_%s_phase'%(meas.name,dataset.captured_run_id),bbox_inches='tight')
 station.remove_component('OPXRabiTime')
 opx_rabi_time.close()
+
+# %%% Analysis
+
+dataset =load_by_run_spec(captured_run_id=15)
+data =_get_data_from_ds(dataset)
+time = data[0][0]['data'].flatten()
+R = data[0][1]['data'].flatten()-np.mean(data[0][1]['data'].flatten())
+phase = data[1][1]['data'].flatten()-np.mean(data[1][1]['data'].flatten())
+
+angle =45 *np.pi/180
+
+newdata = np.exp(1j*angle)*(I+1j*Q)
+
+plt.figure()
+plt.plot(np.real(newdata))
+plt.plot(np.imag(newdata))
+
 
 # %% Time Rabi - Repetiton rate
 importlib.reload(config)
@@ -710,22 +787,16 @@ opx_rabi_time.close()
 
   # %% Time Rabi - 2D
 importlib.reload(config)
-from qcodes.instrument_drivers.OPX.opx_rabi_time import *
+from qcodes.instrument_drivers.QM_qcodes.opx_rabi_time import *
 
-qubit_freq = 4.315e9
-meas_freq =6.7668e9
-lo_qubit = 4.6e9
-lo_resonator = 6.6e9
+meas_freq = 4.84956e9
+qubit_freq = 3.65593e9
+lo_qubit =3.8e9
+if_resonator = 125e6
 
+lo_resonator = meas_freq - if_resonator
 if_qubit = qubit_freq - lo_qubit
-if_resonator =meas_freq - lo_resonator
-# sg_src_2.frequency(lo_qubit)
-# sg_src_2.power(0)
-# sg_src_2.IQ_state(1)
-# sg_src_2.status(1)
-# sg_src.frequency(lo_freq)
-# sg_src.power(18)
-# sg_src.status(1)
+
 
 config.config['elements']['resonator']['mixInputs']['lo_frequency'] = lo_resonator
 config.config['elements']['resonator']['intermediate_frequency'] = if_resonator
@@ -737,11 +808,11 @@ config.config['mixers']['octave_octave1_2'][0]['lo_frequency'] = lo_qubit
 config.config['mixers']['octave_octave1_2'][0]['intermediate_frequency'] = if_qubit
 # print(config.config['mixers']['octave_octave1_1'])
 opx_rabi_time = OPXRabiTime(config=config.config, host=config.opx_ip, port=config.opx_port,host_octave=config.octave_ip,port_octave=config.octave_port)
-# station.add_component(opx_rabi_time)
+station.add_component(opx_rabi_time)
 
 readout_pulse_length = config.config['pulses']['readout_pulse']['length']
-tmin = 5
-tmax= 1000
+tmin = 4
+tmax= 200
 dt = 1
 taus = np.arange(tmin,tmax+0.1,dt)
 
@@ -751,11 +822,12 @@ opx_rabi_time.t_start(tmin)
 opx_rabi_time.t_stop(tmax)
 opx_rabi_time.n_points(npts)
 opx_rabi_time.readout_pulse_length(readout_pulse_length)
-opx_rabi_time.t_meas(readout_pulse_length*1e-9*1e4) #in s
+opx_rabi_time.t_meas(readout_pulse_length*1e-9*5e4) #in s
 opx_rabi_time.readout_pulse_length(readout_pulse_length)
 opx_rabi_time.freq_qubit(if_qubit)
+opx_rabi_time.wait_time(10000)
 opx_rabi_time.set_octave()
-amps = np.arange(0.05,1.9,0.05)
+amps = np.arange(0.2,1.9,0.05)
 #opx_rabi_time.sim_exp(10000)
 meas = Measurement(experiment, station)
 meas.name = "Rabi_Time_2D"
@@ -773,18 +845,21 @@ dataset =load_by_run_spec(captured_run_id=id)
 [axlist,cbar] = plot_dataset(dataset)
 axlist[0].figure.savefig(path+'\\#%s_%s_amp'%(meas.name,dataset.captured_run_id),bbox_inches='tight')
 axlist[1].figure.savefig(path+'\\#%s_%s_phase'%(meas.name,dataset.captured_run_id),bbox_inches='tight')
+station.remove_component('OPXRabiTime')
 opx_rabi_time.close()
 # %% T1
 importlib.reload(config)
 from qcodes.instrument_drivers.QM_qcodes.opx_T1 import *
 
-meas_freq = 4.7573e9
-qubit_freq = 6.11516e9
-lo_qubit =5.9e9
+meas_freq = 4.8245e9
+qubit_freq = 2.876e9
+if_qubit = -250e6
 if_resonator = 125e6
 
+
+
 lo_resonator = meas_freq - if_resonator
-if_qubit = qubit_freq - lo_qubit
+lo_qubit = qubit_freq - if_qubit
 
 config.config['elements']['resonator']['mixInputs']['lo_frequency'] = lo_resonator
 config.config['elements']['resonator']['intermediate_frequency'] = if_resonator
@@ -795,11 +870,11 @@ config.config['elements']['qubit']['mixInputs']['lo_frequency'] = lo_qubit
 config.config['mixers']['octave_octave1_2'][0]['lo_frequency'] = lo_qubit
 config.config['mixers']['octave_octave1_2'][0]['intermediate_frequency'] = if_qubit
 opx_T1 = OPXT1(config=config.config, host=config.opx_ip, port=config.opx_port,host_octave=config.octave_ip,port_octave=config.octave_port)
-# station.add_component(opx_T1)
+station.add_component(opx_T1)
 
 readout_pulse_length = config.config['pulses']['readout_pulse']['length']
 tmin = 4
-tmax= 125
+tmax= 75
 dt = 1
 taus = np.arange(tmin,tmax+0.1,dt)
 
@@ -809,10 +884,10 @@ opx_T1.t_start(tmin)
 opx_T1.t_stop(tmax)
 opx_T1.n_points(npts)
 opx_T1.readout_pulse_length(readout_pulse_length)
-opx_T1.t_meas(readout_pulse_length*1e-9*3e4) #in s
+opx_T1.t_meas(readout_pulse_length*1e-9*5e4) #in s
 opx_T1.readout_pulse_length(readout_pulse_length)
 opx_T1.set_octave()
-# opx_T1.sim_exp(10000)
+#opx_T1.sim_exp(10000)
 meas = Measurement(experiment, station)
 meas.name = "T1"
 meas.register_parameter(opx_T1.trace_mag_phase,paramtype='array')
@@ -826,11 +901,12 @@ dataset =load_by_run_spec(captured_run_id=id)
 [axlist,cbar] = plot_dataset(dataset)
 axlist[0].figure.savefig(path+'\\#%s_%s_amp'%(meas.name,dataset.captured_run_id),bbox_inches='tight')
 axlist[1].figure.savefig(path+'\\#%s_%s_phase'%(meas.name,dataset.captured_run_id),bbox_inches='tight')
+station.remove_component('OPXT1')
 opx_T1.close()
 
 # %%% Fit
 from scipy.optimize import curve_fit
-dataset=load_by_run_spec(captured_run_id= 16)
+dataset=load_by_run_spec(captured_run_id= 8)
 data =_get_data_from_ds(dataset)
 
 time = data[0][0]['data'].flatten()
@@ -842,7 +918,7 @@ ydata = phase
 def func(x, a, b, c):
     return a * np.exp(-b * x) + c
 plt.figure()
-popt, pcov = curve_fit(func, xdata, ydata, p0=[8,0.1,85])
+popt, pcov = curve_fit(func, xdata, ydata, p0=[4,0.1,29.5])
 plt.plot(time,phase)
 plt.plot(xdata, func(xdata, *popt), 'r-',
          label='$T_{1}$ ~ %d ns' % (1/popt[1]))
@@ -854,22 +930,15 @@ plt.ylabel('$\phi$ (degree)')
 importlib.reload(config)
 from qcodes.instrument_drivers.QM_qcodes.opx_T2 import *
 
-
-
-meas_freq = 4.7573e9
-qubit_freq = 6.11516e9
-lo_qubit =5.9e9
+meas_freq = 4.8245e9
+qubit_freq = 2.876e9
+if_qubit = -250e6
 if_resonator = 125e6
 
+
 lo_resonator = meas_freq - if_resonator
-if_qubit = qubit_freq - lo_qubit
-# sg_src_2.frequency(lo_qubit)
-# sg_src_2.power(0)
-# sg_src_2.IQ_state(1)
-# sg_src_2.status(1)
-# sg_src.frequency(lo_freq)
-# sg_src.power(18)
-# sg_src.status(1)
+lo_qubit = qubit_freq - if_qubit
+
 
 config.config['elements']['resonator']['mixInputs']['lo_frequency'] = lo_resonator
 config.config['elements']['resonator']['intermediate_frequency'] = if_resonator
@@ -883,8 +952,8 @@ opx_T2 = OPXT2(config=config.config, host=config.opx_ip, port=config.opx_port,ho
 station.add_component(opx_T2)
 
 readout_pulse_length = config.config['pulses']['readout_pulse']['length']
-tmin = 4
-tmax= 100
+tmin = 3
+tmax= 200
 dt = 1
 taus = np.arange(tmin,tmax+0.1,dt)
 
@@ -897,7 +966,9 @@ opx_T2.readout_pulse_length(readout_pulse_length)
 opx_T2.t_meas(readout_pulse_length*1e-9*2e4) #in s
 opx_T2.readout_pulse_length(readout_pulse_length)
 opx_T2.freq_qubit(if_qubit)
-# opx_T2.sim_exp(10000)
+opx_T2.amp_qubit(0.15)
+opx_T2.detuning(20e6)
+#opx_T2.sim_exp(10000)
 opx_T2.set_octave()
 
 meas = Measurement(experiment, station)
@@ -919,7 +990,7 @@ opx_T2.close()
 # %%% Fit
 
 from scipy.optimize import curve_fit
-dataset=load_by_run_spec(captured_run_id= 38)
+dataset=load_by_run_spec(captured_run_id= 17)
 data =_get_data_from_ds(dataset)
 
 time = data[0][0]['data'].flatten()
@@ -931,7 +1002,7 @@ ydata = phase
 def func(x, a, b, c, f, phi):
     return a * np.exp(-b * x)*np.cos(2*np.pi*f*x+phi) + c
 plt.figure()
-popt, pcov = curve_fit(func, xdata, ydata, p0=[6,0.15,82,0.02,0])
+popt, pcov = curve_fit(func, xdata, ydata, p0=[3,0.1,63,0.02,0])
 plt.plot(time,phase)
 plt.plot(xdata, func(xdata, *popt), 'r-',
          label='$T_{2}^{*}$ ~ %d ns' % (1/popt[1]))
@@ -941,23 +1012,16 @@ plt.ylabel('$\phi$ (degree)')
 #%% Echo
 
 importlib.reload(config)
-from qcodes.instrument_drivers.OPX.opx_echo import *
+from qcodes.instrument_drivers.QM_qcodes.opx_echo import *
 
+meas_freq = 4.8245e9
+qubit_freq = 2.876e9
+if_qubit = -250e6
+if_resonator = 125e6
 
-qubit_freq = 4.314e9
-meas_freq = 6.7668e9
-lo_qubit =4.5e9
-lo_resonator = 6.6e9
+lo_resonator = meas_freq - if_resonator
+lo_qubit = qubit_freq - if_qubit
 
-if_qubit = qubit_freq - lo_qubit
-if_resonator =meas_freq - lo_resonator
-# sg_src_2.frequency(lo_qubit)
-# sg_src_2.power(0)
-# sg_src_2.IQ_state(1)
-# sg_src_2.status(1)
-# sg_src.frequency(lo_freq)
-# sg_src.power(18)
-# sg_src.status(1)
 
 config.config['elements']['resonator']['mixInputs']['lo_frequency'] = lo_resonator
 config.config['elements']['resonator']['intermediate_frequency'] = if_resonator
@@ -967,42 +1031,65 @@ config.config['elements']['qubit']['intermediate_frequency'] = if_qubit
 config.config['elements']['qubit']['mixInputs']['lo_frequency'] = lo_qubit
 config.config['mixers']['octave_octave1_2'][0]['lo_frequency'] = lo_qubit
 config.config['mixers']['octave_octave1_2'][0]['intermediate_frequency'] = if_qubit
-opx_Echo = OPXEcho(config=config.config, host=config.opx_ip, port=config.opx_port,host_octave=config.octave_ip,port_octave=config.octave_port)
-# station.add_component(opx_T1)
+opx_echo = OPXEcho(config=config.config, host=config.opx_ip, port=config.opx_port,host_octave=config.octave_ip,port_octave=config.octave_port)
+station.add_component(opx_echo)
 
 readout_pulse_length = config.config['pulses']['readout_pulse']['length']
-tmin = 10
-tmax= 10000
-dt = 10
+tmin = 4
+tmax= 180
+dt = 2
 taus = np.arange(tmin,tmax+0.1,dt)
 
 npts = len(taus)
 
-opx_Echo.t_start(tmin)
-opx_Echo.t_stop(tmax)
-opx_Echo.n_points(npts)
-opx_Echo.readout_pulse_length(readout_pulse_length)
-opx_Echo.t_meas(readout_pulse_length*1e-9*1e4) #in s
-opx_Echo.readout_pulse_length(readout_pulse_length)
-opx_Echo.freq_qubit(if_qubit)
-# opx_Echo.sim_exp(10000)
-opx_Echo.set_octave()
+opx_echo.t_start(tmin)
+opx_echo.t_stop(tmax)
+opx_echo.n_points(npts)
+opx_echo.readout_pulse_length(readout_pulse_length)
+opx_echo.t_meas(readout_pulse_length*1e-9*5e4) #in s
+opx_echo.readout_pulse_length(readout_pulse_length)
+opx_echo.freq_qubit(if_qubit)
+opx_echo.amp_qubit(0.15)
+#opx_echo.sim_exp(10000)
+opx_echo.set_octave()
 
 meas = Measurement(experiment, station)
 meas.name = "Echo"
-meas.register_parameter(opx_Echo.trace_mag_phase,paramtype='array')
+meas.register_parameter(opx_echo.trace_mag_phase,paramtype='array')
 with meas.run() as datasaver:
-    opx_Echo.run_exp()
-    get_v = opx_Echo.trace_mag_phase.get()
-    datasaver.add_result((opx_Echo.trace_mag_phase, get_v))
+    opx_echo.run_exp()
+    get_v = opx_echo.trace_mag_phase.get()
+    datasaver.add_result((opx_echo.trace_mag_phase, get_v))
     datasaver.flush_data_to_database()
     id = datasaver.run_id
 dataset =load_by_run_spec(captured_run_id=id)
 [axlist,cbar] = plot_dataset(dataset)
 axlist[0].figure.savefig(path+'\\#%s_%s_amp'%(meas.name,dataset.captured_run_id),bbox_inches='tight')
 axlist[1].figure.savefig(path+'\\#%s_%s_phase'%(meas.name,dataset.captured_run_id),bbox_inches='tight')
-opx_Echo.close()
+station.remove_component('OPXEcho')
+opx_echo.close()
 
+# %%% Fit
+from scipy.optimize import curve_fit
+dataset=load_by_run_spec(captured_run_id= 16)
+data =_get_data_from_ds(dataset)
+
+time = data[0][0]['data'].flatten()
+mag = data[0][1]['data'].flatten()
+phase = data[1][1]['data'].flatten()
+
+xdata = time
+ydata = phase
+def func(x, a, b, c):
+    return a * (np.exp(-b * x)) + c
+plt.figure()
+popt, pcov = curve_fit(func, xdata, ydata, p0=[1.5,0.05,31.4])
+plt.plot(time,phase)
+plt.plot(xdata, func(xdata, *popt), 'r-',
+         label='$T_{echo}$ ~ %d ns' % (1/popt[1]))
+plt.legend()
+plt.xlabel('$t_{wait}$ (ns)')
+plt.ylabel('$\phi$ (degree)')
 #%% Ramsey freq-time
 
 importlib.reload(config)
@@ -1071,22 +1158,16 @@ opx_T2.close()
 
 
 importlib.reload(config)
-from qcodes.instrument_drivers.OPX.opx_rabi_time import *
+from qcodes.instrument_drivers.QM_qcodes.opx_rabi_time import *
 
-qubit_freq = 4.315e9
-meas_freq =6.7668e9
-lo_qubit = 4.6e9
-lo_resonator = 6.6e9
+meas_freq = 4.8482e9
+qubit_freq = 3.65593e9
+lo_qubit =3.8e9
+if_resonator = 125e6
 
+lo_resonator = meas_freq - if_resonator
 if_qubit = qubit_freq - lo_qubit
-if_resonator =meas_freq - lo_resonator
-# sg_src_2.frequency(lo_qubit)
-# sg_src_2.power(0)
-# sg_src_2.IQ_state(1)
-# sg_src_2.status(1)
-# sg_src.frequency(lo_freq)
-# sg_src.power(18)
-# sg_src.status(1)
+
 
 config.config['elements']['resonator']['mixInputs']['lo_frequency'] = lo_resonator
 config.config['elements']['resonator']['intermediate_frequency'] = if_resonator
@@ -1098,11 +1179,11 @@ config.config['mixers']['octave_octave1_2'][0]['lo_frequency'] = lo_qubit
 config.config['mixers']['octave_octave1_2'][0]['intermediate_frequency'] = if_qubit
 # print(config.config['mixers']['octave_octave1_1'])
 opx_rabi_time = OPXRabiTime(config=config.config, host=config.opx_ip, port=config.opx_port,host_octave=config.octave_ip,port_octave=config.octave_port)
-# station.add_component(opx_rabi_time)
+station.add_component(opx_rabi_time)
 
 readout_pulse_length = config.config['pulses']['readout_pulse']['length']
-tmin = 5
-tmax= 1000
+tmin = 4
+tmax= 200
 dt = 1
 taus = np.arange(tmin,tmax+0.1,dt)
 
@@ -1112,11 +1193,12 @@ opx_rabi_time.t_start(tmin)
 opx_rabi_time.t_stop(tmax)
 opx_rabi_time.n_points(npts)
 opx_rabi_time.readout_pulse_length(readout_pulse_length)
-opx_rabi_time.t_meas(readout_pulse_length*1e-9*1e4) #in s
+opx_rabi_time.t_meas(readout_pulse_length*1e-9*5e4) #in s
 opx_rabi_time.readout_pulse_length(readout_pulse_length)
 opx_rabi_time.freq_qubit(if_qubit)
+opx_rabi_time.wait_time(10000)
 opx_rabi_time.set_octave()
-freqs = np.arange(if_qubit-10e6,if_qubit+10e6+0.1e6,0.5e6)
+freqs = np.arange(if_qubit-20e6,if_qubit+20e6+0.1e6,1e6)
 #opx_rabi_time.sim_exp(10000)
 meas = Measurement(experiment, station)
 meas.name = "Rabi_Time_2D"
@@ -1134,6 +1216,7 @@ dataset =load_by_run_spec(captured_run_id=id)
 [axlist,cbar] = plot_dataset(dataset)
 axlist[0].figure.savefig(path+'\\#%s_%s_amp'%(meas.name,dataset.captured_run_id),bbox_inches='tight')
 axlist[1].figure.savefig(path+'\\#%s_%s_phase'%(meas.name,dataset.captured_run_id),bbox_inches='tight')
+station.remove_component('OPXRabiTime')
 opx_rabi_time.close()
 #%% Qubit - Meas Power
 

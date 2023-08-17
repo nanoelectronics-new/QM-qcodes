@@ -1,22 +1,20 @@
 # -*- coding: utf-8 -*-
 """
-Created on Wed Mar 22 14:53:41 2023
-
-@author: Nanoelectronics.ad
-"""
-
-# -*- coding: utf-8 -*-
-"""
 Created on Tue Mar 21 14:26:50 2023
 
 @author: Nanoelectronics.ad
 """
 
 from qcodes.utils.validators import Arrays
-from qcodes.instrument_drivers.OPX.opx_driver import *
+from qcodes.instrument_drivers.QM_qcodes.opx_driver import *
 from qm.qua import *
 from scipy import signal
 from qualang_tools.units import unit
+from qualang_tools.bakery import baking
+from qualang_tools.bakery.bakery import deterministic_run
+import qcodes.instrument_drivers.QM_qcodes.configuration as config
+from scipy.signal.windows import gaussian,general_gaussian,cosine
+import numpy as np
 # noinspection PyAbstractClass
 
 class IQArray(MultiParameter):
@@ -53,7 +51,7 @@ class IQArray(MultiParameter):
     def set_sweep(self, start: float, stop: float, npts: int):
         # Needed to update config of the software parameter on sweep change
         # frequency setpoints tuple as needs to be hashable for look up.
-        f = tuple(np.linspace(4*int(start), 4*int(stop), num=npts))
+        f = tuple(np.linspace(2*int(start), 2*int(stop), num=npts))
         self.setpoints = ((f,), (f,))
         self.shapes = ((npts,), (npts,))
 
@@ -137,6 +135,15 @@ class OPXEcho(OPX):
             get_cmd=None,
             set_cmd=None,
         )
+        self.add_parameter(
+            "detuning",
+            unit="Hz",
+            initial_value=10e6,
+            vals=Numbers(-100e6, 100e6),
+            get_cmd=None,
+            set_cmd=None,
+        )
+
 
         self.add_parameter(
             "readout_pulse_length",
@@ -156,7 +163,6 @@ class OPXEcho(OPX):
     def get_prog(self):
         dt = (self.t_stop() - self.t_start()) / (self.n_points()-1)
         n_avg = round(self.t_meas() * 1e9 / self.readout_pulse_length())
-        pi_len  = self.config['pulses']['pi_pulse']['length']
 
         
         if self.octave:
@@ -168,8 +174,55 @@ class OPXEcho(OPX):
             lo_qubit = self.config['mixers']['mixer_qubit'][0]['lo_frequency']
             
         self.parameters['trace_mag_phase'].set_sweep(self.t_start(),self.t_stop(),self.n_points())
+        
+        # Create pulse sequence with baking
+        
+        t_min = self.t_start()
+        t_max = self.t_stop()
+        dt = int((t_max-t_min)/(self.n_points()-1))
+        t_vec = np.arange(t_min, t_max + dt / 2, dt)
+        
+        sample_rate = 1e9
+        n_samples = len(t_vec)
+
+        baking_list = []  # Stores the baking objects
+        t_pihalf = 8
+        # Create the different baked sequences, corresponding to the different taus
+        mixInput_sample_I = list(self.amp_qubit()*cosine(t_pihalf))
+        mixInput_sample_Q = list(np.zeros(t_pihalf))
+        mixInput_sample_2I = list(self.amp_qubit()*cosine(2*t_pihalf))
+        mixInput_sample_2Q = list(np.zeros(2*t_pihalf))
+         
+        for i in range(n_samples):
+            with baking(config.config, padding_method="left", sampling_rate=sample_rate) as b:
+                
+
+              
+              # Assign waveforms to quantum element operation
+              
+                b.add_op("pihalf", "qubit", [mixInput_sample_I, mixInput_sample_Q], digital_marker = 'ON')
+                b.add_op("pi", "qubit", [mixInput_sample_2Q, mixInput_sample_2I ], digital_marker = 'ON')
+                #init_delay = 2*max_delay+int(3*t_pihalf)# Put initial delay to ensure that all of the pulses will have the same length
+                #b.wait(init_delay, 'qubit')  # We first wait the entire duration.
+        
+                # We add the 2nd pi_half pulse with the phase 'dephasing' (Confusingly, the first pulse will be added later)
+                b.wait(2*(t_max-(t_min+i*dt)),'qubit')
+                b.play("pihalf", "qubit")
+                b.wait(t_min+i*dt,'qubit')
+                b.play('pi','qubit')
+                b.wait(t_min+i*dt,'qubit')
+                b.play('pihalf', 'qubit')
+        
+              #  b.play_at("pi", "qubit", t=init_delay - i -2*t_pihalf )
+              #  b.play_at("pihalf", "qubit", t=init_delay - 2*i -3*t_pihalf )
+        
+            # Append the baking object in the list to call it from the QUA program
+            baking_list.append(b)
+            
+        self.qm = self.qmm.open_qm(self.config, close_other_machines=True) #need to open once more to update the config file
         with program() as prog:
             n = declare(int)
+            j = declare(int)
             t = declare(int)
             I = declare(fixed)
             Q = declare(fixed)
@@ -177,22 +230,22 @@ class OPXEcho(OPX):
             Q_st = declare_stream()
             update_frequency('qubit', self.freq_qubit())
             with for_(n, 0, n < n_avg, n + 1):
-                with for_(t, self.t_start(), t <= self.t_stop()+dt/2.0, t + dt):
-                    reset_phase('qubit')
-                    play("pi_half", "qubit") #t in clock cycles (4ns)
-                    wait(t,'qubit')
-                    play('pi','qubit')
-                    wait(t,'qubit')
-                    play("pi_half"*amp(-1), "qubit") #t in clock cycles (4ns)
-                    wait(2*(t+(pi_len//4)),'resonator'),
+                with for_(j, 0, j < n_samples, j + 1):
+                            
+                    deterministic_run(baking_list, j, unsafe=True)
+                   # The following wait command is used to align the resonator to happen right after the pulse.
+                   # In this specific example, an align() command would have added a slight gap.
+                    wait((2*t_max+3*t_pihalf-24)//4,'resonator')
                     reset_phase('resonator')
                     measure("readout", "resonator", None,
                             dual_demod.full("cos", "out1", "sin", "out2", I),
                             dual_demod.full("minus_sin", "out1", "cos", "out2", Q))
 
-                    wait(100000 // 4, 'resonator', 'qubit')
+                    wait(1250, 'resonator','qubit')
                     save(I, I_st)
                     save(Q, Q_st)
+                    
+
 
             with stream_processing():
                 I_st.buffer(self.n_points()).average().save("I")
@@ -217,8 +270,8 @@ class OPXEcho(OPX):
         self.qm =self.qmm.open_qm(self.config)
         self.qm.octave.set_qua_element_octave_rf_in_port('resonator',"octave1", 1)
         self.qm.octave.set_downconversion('resonator',lo_source=RFInputLOSource.Internal)
-        self.qm.octave.set_rf_output_gain('qubit', 7)  # can set gain from -10dB to 20dB
-        self.qm.octave.set_rf_output_gain('resonator', 0)  # can set gain from -10dB to 20dB
+        self.qm.octave.set_rf_output_gain('qubit', 10)  # can set gain from -10dB to 20dB
+        self.qm.octave.set_rf_output_gain('resonator', -10)  # can set gain from -10dB to 20dB
     def run_exp(self):
         self.execute_prog(self.get_prog())
         
@@ -236,7 +289,8 @@ class OPXEcho(OPX):
             u = unit()
             I = u.demod2volts(self.result_handles.get("I").fetch_all(), self.readout_pulse_length())
             Q = u.demod2volts(self.result_handles.get("Q").fetch_all(), self.readout_pulse_length())
-            R = np.sqrt(I ** 2 + Q ** 2)/(self.config['waveforms']['readout_wf']['sample']*self.amp_resonator())
+            # R = np.sqrt(I ** 2 + Q ** 2)/(self.config['waveforms']['readout_wf']['sample']*self.amp_resonator())
+            R = np.sqrt(I ** 2 + Q ** 2)
             phase = np.angle(I + 1j * Q) * 180 / np.pi
              
             return R , phase

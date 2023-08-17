@@ -10,6 +10,11 @@ from qcodes.instrument_drivers.QM_qcodes.opx_driver import *
 from qm.qua import *
 from scipy import signal
 from qualang_tools.units import unit
+from qualang_tools.bakery import baking
+from qualang_tools.bakery.bakery import deterministic_run
+import qcodes.instrument_drivers.QM_qcodes.configuration as config
+from scipy.signal.windows import gaussian,general_gaussian,cosine
+import numpy as np
 # noinspection PyAbstractClass
 
 class IQArray(MultiParameter):
@@ -46,7 +51,7 @@ class IQArray(MultiParameter):
     def set_sweep(self, start: float, stop: float, npts: int):
         # Needed to update config of the software parameter on sweep change
         # frequency setpoints tuple as needs to be hashable for look up.
-        f = tuple(np.linspace(4*int(start+2), 4*int(stop+2), num=npts))
+        f = tuple(np.linspace(int(start), int(stop), num=npts))
         self.setpoints = ((f,), (f,))
         self.shapes = ((npts,), (npts,))
 
@@ -169,8 +174,58 @@ class OPXT2(OPX):
             lo_qubit = self.config['mixers']['mixer_qubit'][0]['lo_frequency']
             
         self.parameters['trace_mag_phase'].set_sweep(self.t_start(),self.t_stop(),self.n_points())
+        
+        # Create pulse sequence with baking
+        
+        t_min = self.t_start()
+        t_max = self.t_stop()
+        dt = 1 
+        t_vec = np.arange(t_min, t_max + dt / 2, dt)
+        
+        sample_rate = round(1 / dt) * 1e9
+        n_samples = len(t_vec)
+ 
+        max_delay = round(t_max * 1 / dt)  # In samples
+        
+        baking_list = []  # Stores the baking objects
+        t_pihalf = 8
+        # Create the different baked sequences, corresponding to the different taus
+        mixInput_sample_I = list(self.amp_qubit()*cosine(t_pihalf))
+        mixInput_sample_Iminus = list(-1*self.amp_qubit()*cosine(t_pihalf))
+        mixInput_sample_Q = list(np.zeros(t_pihalf))
+         
+        for i in range(t_min,t_max+dt):
+            with baking(config.config, padding_method="left", sampling_rate=sample_rate) as b:
+                
+
+              
+              # Assign waveforms to quantum element operation
+              
+                b.add_op("pihalf", "qubit", [mixInput_sample_I, mixInput_sample_Q], digital_marker = 'ON')
+               # b.add_op("minus_pihalf", "qubit", [mixInput_sample_Iminus, mixInput_sample_Q], digital_marker = 'ON')
+                init_delay = max_delay+t_pihalf# Put initial delay to ensure that all of the pulses will have the same length
+                b.wait(init_delay, 'qubit')  # We first wait the entire duration.
+        
+                # We add the 2nd pi_half pulse with the phase 'dephasing' (Confusingly, the first pulse will be added later)
+                # Play uploads the sample in the original config file (here we use an existing pulse in the config)
+                b.frame_rotation_2pi(
+                      float(self.detuning() * 1e-9*  i*dt), "qubit"
+                   )  
+                b.play("pihalf", "qubit")
+        
+                # We reset frame such that the first pulse will be at zero phase
+                # and such that we will not accumulate phase between iterations.
+                b.reset_frame("qubit")
+                # We add the 1st pi_half pulse. It will be added with the frame at time init_delay - i, which will be 0.
+                b.play_at("pihalf", "qubit", t=init_delay - i -t_pihalf )
+        
+            # Append the baking object in the list to call it from the QUA program
+            baking_list.append(b)
+            
+        self.qm = self.qmm.open_qm(self.config, close_other_machines=True) #need to open once more to update the config file
         with program() as prog:
             n = declare(int)
+            j = declare(int)
             t = declare(int)
             I = declare(fixed)
             Q = declare(fixed)
@@ -178,24 +233,21 @@ class OPXT2(OPX):
             Q_st = declare_stream()
             update_frequency('qubit', self.freq_qubit())
             with for_(n, 0, n < n_avg, n + 1):
-                with for_(t, self.t_start(), t <= self.t_stop()+dt/2.0, t + dt):
-                   # reset_phase('qubit')
-                    play("pi_half", "qubit") #t in clock cycles (4ns)
-                    wait(t,'qubit')
-                    frame_rotation_2pi(
-                          Cast.mul_fixed_by_int(self.detuning() * 1e-9, 4 * t), "qubit"
-                      )  # 4*tau because tau was in clock cycles and 1e-9 because tau is ns
-                    play("pi_half"*amp(-1), "qubit") #t in clock cycles (4ns)
-                    wait(t,'resonator'),
+                with for_(j, 0, j < n_samples, j + 1):
+          
+                    deterministic_run(baking_list, j, unsafe=True)
+                   # The following wait command is used to align the resonator to happen right after the pulse.
+                   # In this specific example, an align() command would have added a slight gap.
+                    wait((t_max+t_pihalf-20)//4,'resonator')
                     reset_phase('resonator')
                     measure("readout", "resonator", None,
                             dual_demod.full("cos", "out1", "sin", "out2", I),
                             dual_demod.full("minus_sin", "out1", "cos", "out2", Q))
 
-                    wait(2500, 'resonator', 'qubit')
+                    wait(1250, 'resonator','qubit')
                     save(I, I_st)
                     save(Q, Q_st)
-                    reset_frame('qubit')
+                    
 
 
             with stream_processing():
@@ -221,7 +273,7 @@ class OPXT2(OPX):
         self.qm =self.qmm.open_qm(self.config)
         self.qm.octave.set_qua_element_octave_rf_in_port('resonator',"octave1", 1)
         self.qm.octave.set_downconversion('resonator',lo_source=RFInputLOSource.Internal)
-        self.qm.octave.set_rf_output_gain('qubit', 19)  # can set gain from -10dB to 20dB
+        self.qm.octave.set_rf_output_gain('qubit', 10)  # can set gain from -10dB to 20dB
         self.qm.octave.set_rf_output_gain('resonator', -10)  # can set gain from -10dB to 20dB
     def run_exp(self):
         self.execute_prog(self.get_prog())
@@ -241,7 +293,7 @@ class OPXT2(OPX):
             I = u.demod2volts(self.result_handles.get("I").fetch_all(), self.readout_pulse_length())
             Q = u.demod2volts(self.result_handles.get("Q").fetch_all(), self.readout_pulse_length())
             # R = np.sqrt(I ** 2 + Q ** 2)/(self.config['waveforms']['readout_wf']['sample']*self.amp_resonator())
-            R = 20*np.log10(np.sqrt(I ** 2 + Q ** 2))
+            R = np.sqrt(I ** 2 + Q ** 2)
             phase = np.angle(I + 1j * Q) * 180 / np.pi
              
             return R , phase

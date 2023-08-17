@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.signal.windows import gaussian,general_gaussian,cosine
+from qualang_tools.config.waveform_tools import *
 
 
 #######################
@@ -35,23 +36,16 @@ octave_ip = '10.21.41.199'
 octave_port = 11050
 
 
-saturation_len = 10000
-saturation_amp = 0.2
+saturation_len = 2000
+saturation_amp = 0.1
 const_len = 40000
 const_amp = 0.125
 
 order = 1
 gauss_len = 16
 gauss_sigma = gauss_len / 5
-gauss_amp = 0.35
+gauss_amp = 0.15
 #gauss_wf = gauss_amp * general_gaussian(gauss_len, order, gauss_sigma)
-gauss_wf = gauss_amp * cosine(gauss_len)
-
-
-pi_len = 148
-pi_sigma = pi_len / 5
-pi_amp = 0.125
-# pi_wf = pi_amp * gaussian(pi_len, pi_sigma)
 
 def delayed_wf(amp, length):
     delay = 16 - length
@@ -59,12 +53,23 @@ def delayed_wf(amp, length):
         return amp 
     return np.r_[np.zeros(delay), amp*cosine(length)]
 
+
+gauss_wf = delayed_wf(gauss_amp,4)
+
+
+pi_len = 148
+pi_sigma = pi_len / 5
+pi_amp = 0.125
+# pi_wf = pi_amp * gaussian(pi_len, pi_sigma)
+
+
+
 pi_half_len = 8
 pi_half_sigma = pi_half_len / 5
-pi_half_amp = 0.38
+pi_half_amp = gauss_amp
 pi_half_wf = delayed_wf(pi_half_amp,pi_half_len)
 
-wf_1ns_res = delayed_wf(0.1,4)
+
 # Resonator
 
 
@@ -79,16 +84,16 @@ resonator_fake_lo_freq =4.7e9 # Internal synthesizer in the octave
 
 short_readout_len = 500
 short_readout_amp = 0.4
-readout_len = 300
+readout_len = 116
 readout_amp = 0.1
 long_readout_len = 10000
 long_readout_amp = 0.1
 
 # Resonator kick-in
 
-kick_length = 180
-kick_amp = 4.99*readout_amp
-ringup = 100
+kick_length = 100
+kick_amp = 4*readout_amp
+ringup = 0
 clear = np.concatenate([np.full(kick_length, kick_amp),
                         np.full(readout_len, readout_amp)])
 
@@ -135,6 +140,29 @@ config = {
     },
     'elements': {
         'qubit': {
+            'mixInputs': {
+                'I': ('con1', 3),
+                'Q': ('con1', 4),
+                'lo_frequency': qubit_lo_freq,
+                'mixer': 'octave_octave1_2',
+            },
+            'intermediate_frequency': qubit_if_freq,
+            'operations': {
+                'cw': 'const_pulse',
+                'saturation': 'saturation_pulse',
+                'gauss': 'gaussian_pulse',
+                'pi': 'pi_pulse',
+                'pi_half': 'pi_half_pulse',
+            },
+            "digitalInputs": {
+                "switch": {
+                      "port": ("con1", 2), #Port number of digital marker that is conencted to the Trig_i input of the octacve
+                      "delay": 98,
+                      "buffer": 19,
+                  },
+                },
+        },
+        'qubit2': {
             'mixInputs': {
                 'I': ('con1', 3),
                 'Q': ('con1', 4),
@@ -441,6 +469,11 @@ config = {
                 },
             ],
             "octave_octave1_2": [
+                {
+                    "intermediate_frequency": qubit_if_freq,
+                    "lo_frequency": qubit_lo_freq,
+                    "correction": (1, 0, 0, 1),
+                },
                 {
                     "intermediate_frequency": qubit_if_freq,
                     "lo_frequency": qubit_lo_freq,

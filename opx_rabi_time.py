@@ -39,7 +39,7 @@ class IQArray(MultiParameter):
     def set_sweep(self, start: float, stop: float, npts: int):
         # Needed to update config of the software parameter on sweep change
         # frequency setpoints tuple as needs to be hashable for look up.
-        f = tuple(np.linspace(4*int(start), 4*int(stop), num=npts))
+        f = tuple(np.linspace(int(start), int(stop), num=npts))
         self.setpoints = ((f,), (f,))
         self.shapes = ((npts,), (npts,))
 
@@ -208,7 +208,7 @@ class OPXRabiTime(OPX):
         self.qm =self.qmm.open_qm(self.config)
         self.qm.octave.set_qua_element_octave_rf_in_port('resonator',"octave1", 1)
         self.qm.octave.set_downconversion('resonator',lo_source=RFInputLOSource.Internal)
-        self.qm.octave.set_rf_output_gain('qubit', 19)  # can set gain from -10dB to 20dB
+        self.qm.octave.set_rf_output_gain('qubit', 10)  # can set gain from -10dB to 20dB
         self.qm.octave.set_rf_output_gain('resonator', -10)  # can set gain from -10dB to 20dB
     
     def run_exp(self):

@@ -196,11 +196,16 @@ class OPXSpectrumScan(OPX):
             n = self.n_points()
             return {"I": (0,)*n, "Q": (0,)*n, "R": (0,)*n, "Phi": (0,)*n}
         else:
+            df = int((self.f_stop() - self.f_start()) / (self.n_points()-1))
+            freqs = np.arange(self.f_start(),self.f_stop()+ df /2, df)
+            freq,mag_calib,phase_calib = np.loadtxt("C:\\Users\\Nanoelectronics.ad\\miniconda3\\envs\\qcodes\\Lib\\site-packages\qcodes\\instrument_drivers\\QM_qcodes\\opx_calibration.txt")
+            mag_bkg = np.interp(freqs, freq, mag_calib)
+            phase_bkg = np.interp(freqs, freq, phase_calib)
             self.result_handles.wait_for_all_values()
             u = unit()
             I = u.demod2volts(self.result_handles.get("I").fetch_all(), self.readout_pulse_length())
             Q = u.demod2volts(self.result_handles.get("Q").fetch_all(), self.readout_pulse_length())
             # R = 20*np.log10(np.sqrt(I ** 2 + Q ** 2)/(self.config['waveforms']['readout_wf']['sample']*self.amp()))
-            R = 20*np.log10(np.sqrt(I ** 2 + Q ** 2))-self.Gain()
-            phase = signal.detrend(np.unwrap(np.angle(I + 1j * Q))) * 180 / np.pi
+            R = 20*np.log10(np.sqrt(I ** 2 + Q ** 2))-self.Gain()-mag_bkg
+            phase = signal.detrend(np.unwrap(np.angle(I + 1j * Q))) * 180 / np.pi - phase_bkg
             return R , phase

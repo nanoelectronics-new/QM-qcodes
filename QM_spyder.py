@@ -9,7 +9,7 @@ import math
 #import scipy.optimize,scipy.special,scipy.stats
 import time
 #import lmfit
-#from resonator_tools import circuit
+from resonator_tools import circuit
 import matplotlib.pyplot as plt
 import numpy as np
 import qcodes as qc
@@ -28,7 +28,6 @@ from qcodes.utils.dataset.doNd import do0d,do1d, do2d
 from qcodes.dataset.plotting import plot_dataset
 import os
 from datetime import date
-from qualang_tools import plot
 from qcodes.dataset.data_export import _get_data_from_ds
 import qcodes.instrument_drivers.rohde_schwarz.SGS100A as sgs
 import qcodes.instrument_drivers.IST_devices.fastDUCK20191120 as IVVI
@@ -257,11 +256,11 @@ plt.plot(spectrum*1e10,func(spectrum*1e10, *popt))
 
 # %% Raw ADC
 
-from qcodes.instrument_drivers.OPX.opx_raw_adc import *
+from qcodes.instrument_drivers.QM_qcodes.opx_raw_adc import *
 importlib.reload(config)
 readout_pulse_length = config.config['pulses']['readout_pulse']['length']
 
-meas_freq = 4.704e9
+meas_freq = 4.7e9
 lo_freq = 4.6e9
 resonator_if = meas_freq-lo_freq
 
@@ -283,11 +282,11 @@ config.config['mixers']['octave_octave1_2'][0]['intermediate_frequency'] = if_qu
 
 
 opx_raw_adc = OPXRawADC(config=config.config, host=config.opx_ip, port=config.opx_port,host_octave=config.octave_ip,port_octave=config.octave_port)
-opx_raw_adc.t_meas(readout_pulse_length*1e-9*5e4) #in 
+opx_raw_adc.t_meas(readout_pulse_length*1e-9*1) #in 
 opx_raw_adc.readout_pulse_length(readout_pulse_length)
 opx_raw_adc.smearing(20)
 meas = Measurement(experiment, station)
-meas.name = "ADC"
+meas.name = "ADC_OPXcalibration"
 meas.register_parameter(opx_raw_adc.trace_iq,paramtype='array')
 
 # opx_raw_adc.sim_exp(10000)
@@ -344,52 +343,89 @@ plt.plot(time,Pnew)
 # %% Resonator scan 1D
 from qcodes.parameters import ElapsedTimeParameter
 from qcodes.instrument_drivers.QM_qcodes.opx_resonator_scan import *
-importlib.reload(config)
+
+def Resonator_scan(LO,IF_start,IF_stop,npts,n_avg,plot=False):
+    
+    importlib.reload(config)
+
+    lo_freq = LO
+    config.config['elements']['resonator']['mixInputs']['lo_frequency'] = lo_freq
+    config.config['mixers']['octave_octave1_1'][0]['lo_frequency'] = lo_freq
+    opx_freq_scan = OPXSpectrumScan(config=config.config, host=config.opx_ip, port=config.opx_port,host_octave=config.octave_ip,port_octave=config.octave_port)
+    station.add_component(opx_freq_scan)
+    
+    readout_pulse_length = config.config['pulses']['readout_pulse']['length']
+    fmin= IF_start
+    fmax= IF_stop
+    npts = npts
+    
+    opx_freq_scan.f_start(fmin)
+    opx_freq_scan.f_stop(fmax)
+    opx_freq_scan.n_points(npts)
+    opx_freq_scan.t_meas(readout_pulse_length*1e-9*n_avg) #in s
+    opx_freq_scan.readout_pulse_length(readout_pulse_length)
+    opx_freq_scan.amp(1)
+    opx_freq_scan.set_octave()
+    # opx_freq_scan.sim_exp(10000)
+    
+    meas = Measurement(experiment, station)
+    meas.name = "Freq_scan_1D"
+    meas.register_parameter(opx_freq_scan.trace_mag_phase,paramtype='array')
+    with meas.run() as datasaver:
+            opx_freq_scan.run_exp()
+            get_v = opx_freq_scan.trace_mag_phase.get()
+            datasaver.add_result((opx_freq_scan.trace_mag_phase, get_v))
+            datasaver.flush_data_to_database()
+            id = datasaver.run_id
+    dataset =load_by_run_spec(captured_run_id=id)
+    
+    if plot:        
+        [axlist,cbar] = plot_dataset(dataset)
+        axlist[0].figure.savefig(path+'\\#%s_%s_amp'%(meas.name,dataset.captured_run_id),bbox_inches='tight')
+        axlist[1].figure.savefig(path+'\\#%s_%s_phase'%(meas.name,dataset.captured_run_id),bbox_inches='tight')
+    
+    station.remove_component('OPXSpectrumScan')
+    opx_freq_scan.close_all()
+    
+    data =_get_data_from_ds(dataset)
+    freq = data[0][0]['data'].flatten()
+    mag = data[0][1]['data'].flatten()
+    phase = data[1][1]['data'].flatten()
+    
+    return [freq,mag,phase]
+
+# %%% Execute
 
 
-# time_meas = ElapsedTimeParameter('time_meas')
-lo_freq = 4.7e9
-# sg_src.frequency(lo_freq)
-# sg_src.power(18)
-# sg_src.status(1)
-config.config['elements']['resonator']['mixInputs']['lo_frequency'] = lo_freq
-config.config['mixers']['octave_octave1_1'][0]['lo_frequency'] = lo_freq
-# print(config.config['mixers']['octave_octave1_1'])
-opx_freq_scan = OPXSpectrumScan(config=config.config, host=config.opx_ip, port=config.opx_port,host_octave=config.octave_ip,port_octave=config.octave_port)
-station.add_component(opx_freq_scan)
+res_data= Resonator_scan(4.7e9, 95e6, 145e6, 101, 5e3, True)
 
-readout_pulse_length = config.config['pulses']['readout_pulse']['length']
-fmin=100e6
-fmax= 200e6
-npts = 201
+[freq,mag,phase] = res_data
+phase = phase * np.pi/180
+mag = 10**(mag/20)
+port1 = circuit.notch_port() 
+port1.add_data(freq,mag*np.exp(1j*phase))
+port1.autofit()
 
-opx_freq_scan.f_start(fmin)
-opx_freq_scan.f_stop(fmax)
-opx_freq_scan.n_points(npts)
-opx_freq_scan.t_meas(readout_pulse_length*1e-9*5e3) #in s
-opx_freq_scan.readout_pulse_length(readout_pulse_length)
-opx_freq_scan.amp(1)
-opx_freq_scan.set_octave()
-# opx_freq_scan.sim_exp(10000)
 
-meas = Measurement(experiment, station)
-meas.name = "Freq_scan_1D"
-# meas.register_parameter(time_meas,paramtype='numeric')
-meas.register_parameter(opx_freq_scan.trace_mag_phase,paramtype='array')
-# time_meas.reset_clock()
-with meas.run() as datasaver:
-        opx_freq_scan.run_exp()
-        get_v = opx_freq_scan.trace_mag_phase.get()
-        datasaver.add_result((opx_freq_scan.trace_mag_phase, get_v))
-        datasaver.flush_data_to_database()
-        id = datasaver.run_id
-dataset =load_by_run_spec(captured_run_id=id)
-[axlist,cbar] = plot_dataset(dataset)
-axlist[0].figure.savefig(path+'\\#%s_%s_amp'%(meas.name,dataset.captured_run_id),bbox_inches='tight')
-axlist[1].figure.savefig(path+'\\#%s_%s_phase'%(meas.name,dataset.captured_run_id),bbox_inches='tight')
-station.remove_component('OPXSpectrumScan')
-opx_freq_scan.close()
-  
+
+# %% Analysis
+
+dataset=load_by_run_spec(captured_run_id= 17)
+data =_get_data_from_ds(dataset)
+
+freq = data[0][0]['data'].flatten()
+mag = data[0][1]['data'].flatten()
+phase = data[1][1]['data'].flatten()
+
+
+phase = phase * np.pi/180
+mag = 10**(mag/20)
+port1 = circuit.notch_port() 
+port1.add_data(freq,mag*np.exp(1j*phase))
+port1.autofit()
+port1.fitresults['fr']
+port1.fitresults['Ql']
+
 # %% Resonator scan 2d
 
 from qcodes.instrument_drivers.QM_qcodes.opx_resonator_scan import *
@@ -439,65 +475,84 @@ station.remove_component('OPXSpectrumScan')
 opx_freq_scan.close()
   
 # %% Qubit scan
-importlib.reload(config)
+
 from qcodes.instrument_drivers.QM_qcodes.opx_qubit_scan import *
 
-meas_freq = 4.822e9
-lo_qubit =2.6e9
-resonator_if = 125e6
-lo_freq = meas_freq - resonator_if
-# sg_src_2.frequency(lo_qubit)
-# sg_src_2.power(-5)
-# sg_src_2.IQ_state(1)
-# sg_src_2.status(1)
+def Qubit_scan(LO,IF_start,IF_stop,df,n_avg,lo_r,if_r,plot = False):
+        
+    importlib.reload(config)
+    
+    
+    lo_qubit = LO
+    resonator_if = if_r
+    lo_freq = lo_r
+    
+    config.config['elements']['resonator']['mixInputs']['lo_frequency'] = lo_freq
+    config.config['mixers']['octave_octave1_1'][0]['lo_frequency'] = lo_freq
+    config.config['mixers']['octave_octave1_1'][0]['intermediate_frequency'] = resonator_if
+    config.config['elements']['resonator']['intermediate_frequency'] = resonator_if
+    config.config['elements']['qubit']['mixInputs']['lo_frequency'] = lo_qubit
+    config.config['mixers']['octave_octave1_2'][0]['lo_frequency'] = lo_qubit
+    opx_qubit_scan = OPXQubitScan(config=config.config, host=config.opx_ip, port=config.opx_port,host_octave=config.octave_ip,port_octave=config.octave_port)
+    station.add_component(opx_qubit_scan)
+    
+    readout_pulse_length = config.config['pulses']['readout_pulse']['length']
+    fmin = IF_start
+    fmax= IF_stop
+    df = df
+    freqs = np.arange(fmin,fmax+0.1,df)
+    
+    npts = len(freqs)
+    
+    opx_qubit_scan.f_start(fmin)
+    opx_qubit_scan.f_stop(fmax)
+    opx_qubit_scan.n_points(npts)
+    opx_qubit_scan.t_meas(readout_pulse_length*1e-9*n_avg) #in s
+    opx_qubit_scan.readout_pulse_length(readout_pulse_length)
+    #opx_qubit_scan.amp_resonator(1)
+    # opx_qubit_scan.set_qubit_gain(7)
+    #opx_qubit_scan.sim_exp(10000)
+    
+    opx_qubit_scan.set_octave()
+    
+    meas = Measurement(experiment, station)
+    meas.name = "Qubit_scan_1D"
+    meas.register_parameter(opx_qubit_scan.trace_mag_phase,paramtype='array')
+    with meas.run() as datasaver:
+        opx_qubit_scan.run_exp()
+        get_v = opx_qubit_scan.trace_mag_phase.get()
+        datasaver.add_result((opx_qubit_scan.trace_mag_phase, get_v))
+        datasaver.flush_data_to_database()
+        id = datasaver.run_id
+    dataset =load_by_run_spec(captured_run_id=id)
+    
+    if plot:
+        [axlist,cbar] = plot_dataset(dataset)
+        axlist[0].figure.savefig(path+'\\#%s_%s_amp'%(meas.name,dataset.captured_run_id),bbox_inches='tight')
+        axlist[1].figure.savefig(path+'\\#%s_%s_phase'%(meas.name,dataset.captured_run_id),bbox_inches='tight')
+    station.remove_component('OPXQubitScan')
+    opx_qubit_scan.close()
+    
+    data =_get_data_from_ds(dataset)
+    freq = data[0][0]['data'].flatten()
+    mag = data[0][1]['data'].flatten()
+    phase = data[1][1]['data'].flatten()
+    
+    return [freq,mag,phase]
+    
+# %%% Execute
 
-# sg_src.frequency(lo_freq)
-# sg_src.power(18)
-# sg_src.status(1)
 
-config.config['elements']['resonator']['mixInputs']['lo_frequency'] = lo_freq
-config.config['mixers']['octave_octave1_1'][0]['lo_frequency'] = lo_freq
-config.config['mixers']['octave_octave1_1'][0]['intermediate_frequency'] = resonator_if
-config.config['elements']['resonator']['intermediate_frequency'] = resonator_if
-config.config['elements']['qubit']['mixInputs']['lo_frequency'] = lo_qubit
-config.config['mixers']['octave_octave1_2'][0]['lo_frequency'] = lo_qubit
-opx_qubit_scan = OPXQubitScan(config=config.config, host=config.opx_ip, port=config.opx_port,host_octave=config.octave_ip,port_octave=config.octave_port)
-station.add_component(opx_qubit_scan)
-
-readout_pulse_length = config.config['pulses']['readout_pulse']['length']
-fmin =-350e6
-fmax= -10e6
-df = 1e6
-freqs = np.arange(fmin,fmax+0.1,df)
-
-npts = len(freqs)
-
-opx_qubit_scan.f_start(fmin)
-opx_qubit_scan.f_stop(fmax)
-opx_qubit_scan.n_points(npts)
-opx_qubit_scan.t_meas(readout_pulse_length*1e-9*4e4) #in s
-opx_qubit_scan.readout_pulse_length(readout_pulse_length)
-opx_qubit_scan.amp_resonator(1)
-# opx_qubit_scan.set_qubit_gain(7)
-#opx_qubit_scan.sim_exp(10000)
-
-opx_qubit_scan.set_octave()
-
-meas = Measurement(experiment, station)
-meas.name = "Qubit_scan_1D"
-meas.register_parameter(opx_qubit_scan.trace_mag_phase,paramtype='array')
-with meas.run() as datasaver:
-    opx_qubit_scan.run_exp()
-    get_v = opx_qubit_scan.trace_mag_phase.get()
-    datasaver.add_result((opx_qubit_scan.trace_mag_phase, get_v))
-    datasaver.flush_data_to_database()
-    id = datasaver.run_id
-dataset =load_by_run_spec(captured_run_id=id)
-[axlist,cbar] = plot_dataset(dataset)
-axlist[0].figure.savefig(path+'\\#%s_%s_amp'%(meas.name,dataset.captured_run_id),bbox_inches='tight')
-axlist[1].figure.savefig(path+'\\#%s_%s_phase'%(meas.name,dataset.captured_run_id),bbox_inches='tight')
-station.remove_component('OPXQubitScan')
-opx_qubit_scan.close()
+res_data= Resonator_scan(4.7e9, 95e6, 145e6, 101, 5e3, True)
+[freq,mag,phase] = res_data
+phase = phase * np.pi/180
+mag = 10**(mag/20)
+port1 = circuit.notch_port() 
+port1.add_data(freq,mag*np.exp(1j*phase))
+port1.autofit()
+fr = port1.fitresults['fr']
+lo = 4.7e9
+Qubit_scan(2.4e9,-350e6,-10e6,1e6,1e4,lo,fr-lo-2e6,plot = True)
 
 # %% Anharmonicity
 

@@ -533,10 +533,10 @@ def Qubit_scan(LO,IF_start,IF_stop,df,n_avg,lo_r,if_r,plot = False):
     station.remove_component('OPXQubitScan')
     opx_qubit_scan.close()
     
-    data =_get_data_from_ds(dataset)
-    freq = data[0][0]['data'].flatten()
-    mag = data[0][1]['data'].flatten()
-    phase = data[1][1]['data'].flatten()
+    data =_get_data_from_ds(dataset);
+    freq = data[0][0]['data'].flatten();
+    mag = data[0][1]['data'].flatten();
+    phase = data[1][1]['data'].flatten();
     
     return [freq,mag,phase]
     
@@ -550,6 +550,7 @@ mag = 10**(mag/20)
 port1 = circuit.notch_port() 
 port1.add_data(freq,mag*np.exp(1j*phase))
 port1.autofit()
+port1.plotall()
 fr = port1.fitresults['fr']
 lo = 4.7e9
 Qubit_scan(2.4e9,-350e6,-10e6,1e6,1e4,lo,fr-lo-2e6,plot = True)

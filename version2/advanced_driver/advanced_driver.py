@@ -1,8 +1,10 @@
-from qualang_tools.external_frameworks.qcodes.opx_driver import OPX
+from qcodes.instrument_drivers.QM_qcodes.version2.basic_driver.opx_driver import OPX
 from qm.qua import *
 from typing import Dict
 from qcodes.utils.validators import Numbers
-
+from qm.octave import *
+from qm.octave.octave_manager import ClockMode
+from qm.QuantumMachinesManager import QuantumMachinesManager
 
 # noinspection PyAbstractClass
 class OPXCustomSequence(OPX):
@@ -10,8 +12,7 @@ class OPXCustomSequence(OPX):
     QCoDeS driver for the OPX.
 
     This specific experiment consists of a custom pulse sequence (to be set with the self.pulse_sequence() attribute)
-    embedded in an infinite loop with a pause statement at the beginning of each iteration to allow the synchronization
-    with the qcodes do"nd" scans.
+
 
     The readout element, operation and duration can be parametrized, as well as the acquisition_mode that can be
     'raw_adc', 'full_integration', 'full_demodulation', 'sliced_integration' or 'sliced_demodulation'.
@@ -26,16 +27,19 @@ class OPXCustomSequence(OPX):
     :param host: IP address of the router to which the OPX is connected.
     :param port: Port of the OPX or main OPX if working with a cluster.
     """
-
+             
+      
     def __init__(
         self,
         config: Dict,
         name: str = "OPXCustomSequence",
         host=None,
-        port=None,
+        cluster_name=None,
+        octave = None,
         close_other_machines=True,
+        qmm = None
     ):
-        super().__init__(config, name, host=host, port=port)
+        super().__init__(config, name, host=host, cluster_name= cluster_name, octave= octave, qmm = qmm)
         self.counter = 0
         self.measurement_variables = None
         self.close_other_machines = close_other_machines
@@ -90,13 +94,6 @@ class OPXCustomSequence(OPX):
             set_cmd=None,
         )
         self.add_parameter(
-            "pulse_sequence",
-            unit="",
-            initial_value=None,
-            get_cmd=None,
-            set_cmd=None,
-        )
-        self.add_parameter(
             "n_avg",
             unit="",
             initial_value=1,
@@ -120,7 +117,10 @@ class OPXCustomSequence(OPX):
             set_cmd=None,
         )
 
-    # Function to update the readout length
+
+
+
+    # Function to update the readout length, only works with constant pulses
     def update_readout_parameters(self):
         """Update the config with the readout length and amplitude set with self.readout_pulse_length() and self.readout_pulse_amplitude()."""
         if self.readout_pulse_length() % 4 != 0:
@@ -160,6 +160,10 @@ class OPXCustomSequence(OPX):
     # Declare the QUA variables for the measurement based on the self.acquisition_mode() parameter.
     def measurement_declaration(self):
         """Declare the QUA variables for the measurement based on the self.acquisition_mode() parameter."""
+        #Adding readout pulse length 
+        pulse = self.config["elements"][self.readout_element()]["operations"][
+                                                        self.readout_operation()]
+        self.readout_pulse_length(self.config['pulses'][pulse]['length'])
         if self.acquisition_mode() == "raw_adc":
             adc_st = declare_stream(adc_trace=True)
             self.measurement_variables = adc_st
@@ -355,6 +359,35 @@ class OPXCustomSequence(OPX):
                 )
         else:
             raise Exception("'scan_opx' must be either '0d', '1d' or '2d'.")
+    
+    def set_octave(self, elements: list)-> None:
+        "Set LO frequency for the given elements and perform calibration"
+        "elements : list of elements from the config file"
+        
+        
+        for element in elements: #TO BE DONE: TYPE CHECKING#
+            
+            #Obtain LO frequency from the config file
+            lo_freq = self.config['elements'][element]['mixInputs']['lo_frequency']
+            if_freq = self.config['elements'][element]['intermediate_frequency']
+            
+            # Assuming Internal LO and Trigger from the Digital Output from the OPX
+            
+            self.qm.octave.set_lo_source(element, OctaveLOSource.Internal)
+            self.qm.octave.set_lo_frequency(element, lo_freq) # assign the LO inside the octave to element
+            self.qm.octave.set_rf_output_gain(element, 0) # can set gain from -10dB to 20dB
+            self.qm.octave.set_rf_output_mode(element, RFOutputMode.trig_normal) # set the behaviour of the RF switch
+            self.qm.octave.calibrate_element(element,[(lo_freq, if_freq)]) # can provide many pairs of LO & IFs.
+            self.qm =self.qmm.open_qm(self.config)
+ 
+    
+    def set_octave_readout(self, channel)-> None:
+        """Sets RF input (1 & 2)"""
+        """ LO source stays internal for the moment"""
+
+        self.qm.octave.set_qua_element_octave_rf_in_port(self.readout_element(),"octave1", channel)
+        self.qm.octave.set_downconversion(self.readout_element(),lo_source=RFInputLOSource.Internal)
+        
 
     # Empty method that can be replaced by your pulse sequence in the main script
     # This can also be modified so that you can put the sequences here directly...
@@ -365,21 +398,18 @@ class OPXCustomSequence(OPX):
     # Return the QUA program based of the measurement type and the pulse sequence
     def get_prog(self):
         # Update the readout duration and the integration weights
-        self.update_readout_parameters()
-
+        #self.update_readout_parameters() # Doesn't work if the waveform is not of constant amplitude
         with program() as prog:
+            #Removed with infinite_loop -> DON'T use doND functions
             # Declare the measurement variables (I, Q, I_st...)
             self.measurement_variables = self.measurement_declaration()
-            # Infinite loop and pause() to synchronize with qcodes scans when we are not simulating
-            with infinite_loop_():
-                if not self.simulation():
-                    pause()
-                # Wait for the AWG trigger if needed
-                if self.wait_for_trigger():
-                    wait_for_trigger(self.readout_element())
-                    align()
-                # Play a custom sequence with the OPX
-                self.pulse_sequence(self)
+        
+            # Wait for the AWG trigger if needed
+            if self.wait_for_trigger():
+                wait_for_trigger(self.readout_element())
+                align()
+            # Play a custom sequence with the OPX
+            self.pulse_sequence()
 
             with stream_processing():
                 # Transfer the results from the FPGA to the CPU

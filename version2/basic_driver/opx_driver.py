@@ -265,9 +265,9 @@ class OPX(Instrument):
                                 
                 # raw adc traces
                 elif self.results["types"][i] == "adc":
-                    out = u.raw2volts(np.ndarray(
-                                          self.result_handles.get(self.results["names"][i]).fetch_all(),dtype='float64')
-                                          ,self.readout_pulse_length())* self.results["scale_factor"][i]
+                    out = u.raw2volts(np.ndarray(shape=(self.readout_pulse_length()),dtype='float64'
+                                          ,buffer=self.result_handles.get(self.results["names"][i]).fetch_all())
+                                          )* self.results["scale_factor"][i]
                               
                 # Reshape data
                 if len(self.results["buffers"][i]) == 2:

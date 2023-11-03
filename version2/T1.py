@@ -13,19 +13,20 @@ from scipy import signal
 import lmfit
 
 
-class Qubit_scan(OPXCustomSequence):
+class T1(OPXCustomSequence):
     """
 
 
     Parameters
     ----------
     if_resonator:
-    if_start:
-    if_stop:
+    t_start:
+    t_stop:
+    if_qubit
     lo_qubit:
     lo_resonator
 
-    Qubit spectrscopy with sweeping the IF frequency of the resoantor element
+    T1 measurement
 
     Returns
     -------
@@ -37,7 +38,7 @@ class Qubit_scan(OPXCustomSequence):
     def __init__(
         self,
         config: Dict,
-        name: str = "QubitScan",
+        name: str = "T1",
         host=None,
         cluster_name=None,
         octave = None,
@@ -50,21 +51,21 @@ class Qubit_scan(OPXCustomSequence):
         self.close_other_machines = close_other_machines
 
         self.add_parameter(
-            "if_start",
-            initial_value=100e6,
-            unit="Hz",
-            label="f start",
-            vals=Numbers(-400e6, 400e6),
+            "t_start",
+            initial_value=10,
+            unit="ns",
+            label="t_start",
+            vals=Numbers(4, 1e4),
             get_cmd=None,
             set_cmd=None,
         )
 
         self.add_parameter(
-            "if_stop",
-            initial_value=100e6,
-            unit="Hz",
-            label="f stop",
-            vals=Numbers(-400e6, 400e6),
+            "t_stop",
+            initial_value=100,
+            unit="ns",
+            label="t_stop",
+            vals=Numbers(4, 1e4),
             get_cmd=None,
             set_cmd=None,
         )
@@ -74,6 +75,15 @@ class Qubit_scan(OPXCustomSequence):
             unit="Hz",
             label="LO_qubit",
             vals=Numbers(2e9, 18e9),
+            get_cmd=None,
+            set_cmd=None,
+        )
+        self.add_parameter(
+            "if_qubit",
+            initial_value=100e6,
+            unit="Hz",
+            label="IF_qubit",
+            vals=Numbers(-400e6, 400e6),
             get_cmd=None,
             set_cmd=None,
         )
@@ -120,6 +130,14 @@ class Qubit_scan(OPXCustomSequence):
             set_cmd=self.set_gain_qubit,
         )
         self.add_parameter(
+            "amp_qubit",
+            initial_value=1,
+            unit="",
+            vals=Numbers(-2, 2),
+            get_cmd=None,
+            set_cmd=self.set_gain_qubit,
+        )
+        self.add_parameter(
             "wait_time",
             initial_value=5000,
             unit="ns",
@@ -140,18 +158,19 @@ class Qubit_scan(OPXCustomSequence):
         Sweeping the IF frequency of the qubit and measure resonator's resposne
 
         """
-        df = int((self.if_stop() - self.if_start()) / (self.n_points()-1))
+        dt = int((self.t_stop() - self.t_start()) / (self.n_points()-1))
         n = declare(int)
-        f = declare(int)
+        t = declare(int)
         with for_(n, 0, n < self.n_avg(), n + 1):
-            with for_(f, self.if_start(), f <= self.if_stop()+df/2.0, f + df):
-                update_frequency('qubit', f)
-                play('bias','gate')
-                play("saturation", "qubit")
-                wait(((2000-32)//4),self.readout_element())
-                reset_phase(self.readout_element())
-                self.measurement()
-                wait(self.wait_time()//4, 'qubit', self.readout_element())
+            with for_(t, self.t_start(), t <= self.t_stop()+dt/2.0, t + dt):
+                 reset_phase('qubit')
+                 play("drag"*amp(self.amp_qubit()), "qubit",duration=10) #t in clock cycles (4ns)
+                 # play("gauss"*amp(self.amp_qubit()), "qubit",duration=t) #t in clock cycles (4ns)
+                 wait(t+22,'resonator')
+                 reset_phase(self.readout_element())
+                 self.measurement()
+      
+                 wait(self.wait_time()//4,'resonator','qubit')
 
     def set_gain_resonator(self, gain):
 
@@ -170,10 +189,9 @@ class Qubit_scan(OPXCustomSequence):
 
         self.set_sweep_parameters(
             "axis1",
-            np.linspace(self.lo_qubit()+self.if_start(), self.lo_qubit() +
-                        self.if_stop(), self.n_points()),
-            "Hz",
-            "Frequency",
+            np.linspace(4*self.t_start(), 4*self.t_stop(), self.n_points()),
+            "ns",
+            "Time",
         )
 
         # Update config file
@@ -192,6 +210,9 @@ class Qubit_scan(OPXCustomSequence):
         self.config['elements'][self.readout_element(
         )]['intermediate_frequency'] = self.if_resonator()
         self.config['mixers'][mixer_resonator][0]['intermediate_frequency'] = self.if_resonator()
+        
+        self.config['elements']['qubit']['intermediate_frequency'] = self.if_qubit()
+        self.config['mixers'][mixer_qubit][0]['intermediate_frequency'] = self.if_qubit()
 
         self.set_config(self.config)
 
@@ -203,23 +224,7 @@ class Qubit_scan(OPXCustomSequence):
         self.Gain_qubit(self.Gain_qubit())
         self.Gain_resonator(self.Gain_resonator())
         
-    def fit_qubit(self) -> list:
-        
-        data= self.get_res()
-        freq = self.axis1_axis()
-        
-        phi =data['Phi']
-        freq_guess = freq[np.argmax(phi)]
-        
-        peak1 = lmfit.models.LorentzianModel(prefix='l1_')
-      #  peak2 = lmfit.models.LorentzianModel(prefix='l2_')
-        background = lmfit.models.LinearModel()
-        model = background + peak1 
-        model.param_names
-        params = model.make_params(slope=1e-5,intercept=np.min(phi),l1_amplitude=1,l1_center=freq_guess,l1_sigma=0.025)
-        result = model.fit(phi, params, x=freq/1e9)
-        
-        return result.best_values['l1_center']
+
         
       
 

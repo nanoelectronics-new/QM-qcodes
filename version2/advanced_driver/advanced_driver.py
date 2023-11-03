@@ -36,7 +36,7 @@ class OPXCustomSequence(OPX):
         host=None,
         cluster_name=None,
         octave = None,
-        close_other_machines=True,
+        close_other_machines=False,
         qmm = None
     ):
         super().__init__(config, name, host=host, cluster_name= cluster_name, octave= octave, qmm = qmm)
